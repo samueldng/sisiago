@@ -86,7 +86,6 @@ export default function SaleDetailsPage() {
           name: 'João Silva',
           email: 'joao@exemplo.com',
           role: 'OPERATOR' as any,
-          isActive: true,
           createdAt: new Date(),
           updatedAt: new Date()
         },
