@@ -366,9 +366,9 @@ export default function PaymentsPage() {
                         <div className="text-sm text-gray-600 mb-2">
                           <Calendar className="inline w-4 h-4 mr-1" />
                           Criado em: {formatDateTime(payment.createdAt)}
-                          {payment.processedAt && (
+                          {payment.paidAt && (
                             <span className="ml-4">
-                              Processado em: {formatDateTime(payment.processedAt)}
+                              Processado em: {formatDateTime(payment.paidAt)}
                             </span>
                           )}
                         </div>
