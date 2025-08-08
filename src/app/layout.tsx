@@ -5,7 +5,7 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Sis IA Go - Sistema PDV',
+  title: 'Sis Iago - Sistema PDV',
   description: 'Sistema de Ponto de Venda moderno e mobile-first',
   manifest: '/manifest.json',
   themeColor: '#000000',

@@ -118,7 +118,7 @@ export default function PixQRCode({
     // Simulação de um código PIX (EMV)
     // Em uma implementação real, isso viria do gateway de pagamento
     const pixKey = 'exemplo@email.com'
-    const merchantName = 'SIS IA GO COMERCIO'
+    const merchantName = 'SIS IAGO COMERCIO'
     const merchantCity = 'SAO PAULO'
     const txId = `TXN${Date.now()}`
     

@@ -89,19 +89,17 @@ export default function SaleDetailsPage() {
           createdAt: new Date(),
           updatedAt: new Date()
         },
-        payments: [
-          {
-            id: '1',
-            amount: 23.00,
-            method: PaymentMethod.PIX,
-            status: 'PAID' as any,
-            transactionId: 'PIX123456789',
-            processedAt: new Date(),
-            saleId: saleId,
+        payment: {
+          id: '1',
+          amount: 23.00,
+          method: PaymentMethod.PIX,
+          status: 'PAID' as any,
+          transactionId: 'PIX123456789',
+          paidAt: new Date(),
+          saleId: saleId,
             createdAt: new Date(),
             updatedAt: new Date()
-          }
-        ],
+          },
         createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutos atrás
         updatedAt: new Date()
       }
