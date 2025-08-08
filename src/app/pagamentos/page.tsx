@@ -53,7 +53,7 @@ export default function PaymentsPage() {
           method: PaymentMethod.PIX,
           status: PaymentStatus.PAID,
           transactionId: 'PIX123456789',
-          processedAt: new Date(Date.now() - 1000 * 60 * 15),
+          paidAt: new Date(Date.now() - 1000 * 60 * 15),
           saleId: '1',
           sale: {
             id: '1',
