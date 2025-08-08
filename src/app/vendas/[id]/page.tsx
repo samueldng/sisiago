@@ -346,7 +346,7 @@ export default function SaleDetailsPage() {
             </Card>
 
             {/* Informações de Pagamento */}
-            {sale.payments && sale.payments.length > 0 && (
+            {sale.payment && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -356,7 +356,9 @@ export default function SaleDetailsPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {sale.payments.map((payment) => (
+                    {(() => {
+                      const payment = sale.payment;
+                      return (
                       <div key={payment.id} className="p-4 border rounded-lg">
                         <div className="flex items-center justify-between mb-2">
                           <div className="font-medium">{translatePaymentMethod(payment.method)}</div>
@@ -367,13 +369,14 @@ export default function SaleDetailsPage() {
                             ID da Transação: {payment.transactionId}
                           </div>
                         )}
-                        {payment.processedAt && (
+                        {payment.paidAt && (
                           <div className="text-sm text-gray-600">
-                            Processado em: {formatDateTime(payment.processedAt)}
+                            Processado em: {formatDateTime(payment.paidAt)}
                           </div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })()}
                   </div>
                 </CardContent>
               </Card>
