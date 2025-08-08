@@ -55,19 +55,6 @@ export default function PaymentsPage() {
           transactionId: 'PIX123456789',
           paidAt: new Date(Date.now() - 1000 * 60 * 15),
           saleId: '1',
-          sale: {
-            id: '1',
-            total: 25.50,
-            discount: 0,
-            finalTotal: 25.50,
-            paymentMethod: PaymentMethod.PIX,
-            status: 'PAID' as any,
-            notes: '',
-            userId: '1',
-            items: [],
-            createdAt: new Date(),
-            updatedAt: new Date()
-          },
           createdAt: new Date(Date.now() - 1000 * 60 * 30),
           updatedAt: new Date(Date.now() - 1000 * 60 * 15)
         },
@@ -76,21 +63,8 @@ export default function PaymentsPage() {
           amount: 13.70,
           method: PaymentMethod.CASH,
           status: PaymentStatus.PAID,
-          processedAt: new Date(Date.now() - 1000 * 60 * 60 * 2),
+          paidAt: new Date(Date.now() - 1000 * 60 * 60 * 2),
           saleId: '2',
-          sale: {
-            id: '2',
-            total: 15.70,
-            discount: 2.00,
-            finalTotal: 13.70,
-            paymentMethod: PaymentMethod.CASH,
-            status: 'PAID' as any,
-            notes: 'Cliente pagou com R$ 20,00',
-            userId: '1',
-            items: [],
-            createdAt: new Date(),
-            updatedAt: new Date()
-          },
           createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2),
           updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 2)
         },
@@ -100,19 +74,6 @@ export default function PaymentsPage() {
           method: PaymentMethod.PIX,
           status: PaymentStatus.PENDING,
           saleId: '3',
-          sale: {
-            id: '3',
-            total: 22.90,
-            discount: 0,
-            finalTotal: 22.90,
-            paymentMethod: PaymentMethod.PIX,
-            status: 'PENDING' as any,
-            notes: '',
-            userId: '1',
-            items: [],
-            createdAt: new Date(),
-            updatedAt: new Date()
-          },
           createdAt: new Date(Date.now() - 1000 * 60 * 10),
           updatedAt: new Date(Date.now() - 1000 * 60 * 10)
         },
@@ -122,19 +83,6 @@ export default function PaymentsPage() {
           method: PaymentMethod.PIX,
           status: PaymentStatus.EXPIRED,
           saleId: '4',
-          sale: {
-            id: '4',
-            total: 45.80,
-            discount: 0,
-            finalTotal: 45.80,
-            paymentMethod: PaymentMethod.PIX,
-            status: 'CANCELLED' as any,
-            notes: '',
-            userId: '1',
-            items: [],
-            createdAt: new Date(),
-            updatedAt: new Date()
-          },
           createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24),
           updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 24)
         }
