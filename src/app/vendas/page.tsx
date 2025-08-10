@@ -40,149 +40,39 @@ export default function SalesPage() {
   const loadSales = async () => {
     try {
       setLoading(true)
-      // TODO: Implementar chamada para API
-      // const response = await fetch(`/api/sales?date=${dateFilter}`)
-      // const data = await response.json()
-      // setSales(data)
+      const response = await fetch(`/api/sales?date=${dateFilter}`)
+      if (!response.ok) {
+        throw new Error('Erro ao carregar vendas')
+      }
+      const data = await response.json()
       
-      // Dados mockados para demonstração
-      const mockSales: Sale[] = [
-        {
-          id: '1',
-          total: 25.50,
-          discount: 0,
-          finalTotal: 25.50,
-          paymentMethod: PaymentMethod.PIX,
-          status: SaleStatus.PAID,
-          notes: '',
-          userId: '1',
-          items: [
-            {
-              id: '1',
-              quantity: 3,
-              unitPrice: 8.50,
-              total: 25.50,
-              saleId: '1',
-              productId: '1',
-              product: {
-                id: '1',
-                name: 'Coca-Cola 2L',
-                barcode: '7894900011517',
-                salePrice: 8.50,
-                costPrice: 6.00,
-                stock: 50,
-                unit: 'UN' as any,
-                description: 'Refrigerante Coca-Cola 2 Litros',
-                isActive: true,
-                categoryId: '1',
-                createdAt: new Date(),
-                updatedAt: new Date()
-              },
-              createdAt: new Date()
-            }
-          ],
-          createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutos atrás
-          updatedAt: new Date()
-        },
-        {
-          id: '2',
-          total: 15.70,
-          discount: 2.00,
-          finalTotal: 13.70,
-          paymentMethod: PaymentMethod.CASH,
-          status: SaleStatus.PAID,
-          notes: 'Cliente pagou com R$ 20,00',
-          userId: '1',
-          items: [
-            {
-              id: '2',
-              quantity: 2,
-              unitPrice: 4.50,
-              total: 9.00,
-              saleId: '2',
-              productId: '2',
-              product: {
-                id: '2',
-                name: 'Pão de Açúcar 500g',
-                barcode: '7891000100103',
-                salePrice: 4.50,
-                costPrice: 3.20,
-                stock: 25,
-                unit: 'UN' as any,
-                description: 'Pão de açúcar tradicional 500g',
-                isActive: true,
-                categoryId: '2',
-                createdAt: new Date(),
-                updatedAt: new Date()
-              },
-              createdAt: new Date()
-            },
-            {
-              id: '3',
-              quantity: 1,
-              unitPrice: 5.20,
-              total: 5.20,
-              saleId: '2',
-              productId: '3',
-              product: {
-                id: '3',
-                name: 'Leite Integral 1L',
-                barcode: '7891000053508',
-                salePrice: 5.20,
-                costPrice: 4.10,
-                stock: 30,
-                unit: 'L' as any,
-                description: 'Leite integral UHT 1 litro',
-                isActive: true,
-                categoryId: '3',
-                createdAt: new Date(),
-                updatedAt: new Date()
-              },
-              createdAt: new Date()
-            }
-          ],
-          createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 horas atrás
-          updatedAt: new Date()
-        },
-        {
-          id: '3',
-          total: 22.90,
-          discount: 0,
-          finalTotal: 22.90,
-          paymentMethod: PaymentMethod.CREDIT_CARD,
-          status: SaleStatus.PENDING,
-          notes: '',
-          userId: '1',
-          items: [
-            {
-              id: '4',
-              quantity: 1,
-              unitPrice: 22.90,
-              total: 22.90,
-              saleId: '3',
-              productId: '4',
-              product: {
-                id: '4',
-                name: 'Arroz Branco 5kg',
-                barcode: '7891000315507',
-                salePrice: 22.90,
-                costPrice: 18.50,
-                stock: 15,
-                unit: 'KG' as any,
-                description: 'Arroz branco tipo 1, pacote 5kg',
-                isActive: true,
-                categoryId: '4',
-                createdAt: new Date(),
-                updatedAt: new Date()
-              },
-              createdAt: new Date()
-            }
-          ],
-          createdAt: new Date(Date.now() - 1000 * 60 * 10), // 10 minutos atrás
-          updatedAt: new Date()
-        }
-      ]
-      setSales(mockSales)
+      // Mapear dados do Supabase para o formato esperado pelo frontend
+      const mappedSales = (data.sales || []).map((sale: any) => ({
+        id: sale.id,
+        total: sale.total,
+        discount: sale.discount || 0,
+        finalTotal: sale.final_total || sale.total,
+        paymentMethod: sale.payment_method,
+        status: sale.status,
+        notes: sale.notes,
+        userId: sale.user_id,
+        user: sale.users,
+        items: (sale.sale_items || []).map((item: any) => ({
+          id: item.id,
+          quantity: item.quantity,
+          unitPrice: item.unit_price,
+          total: item.total,
+          saleId: item.sale_id,
+          productId: item.product_id,
+          product: item.products,
+          createdAt: item.created_at
+        })),
+        payment: sale.payments?.[0],
+        createdAt: sale.created_at,
+        updatedAt: sale.updated_at
+      }))
+      
+      setSales(mappedSales)
     } catch (error) {
       console.error('Erro ao carregar vendas:', error)
     } finally {
@@ -193,8 +83,8 @@ export default function SalesPage() {
   // Filtrar vendas
   const filteredSales = sales.filter(sale => {
     const matchesSearch = sale.id.includes(searchTerm) ||
-                         sale.items.some(item => 
-                           item.product?.name.toLowerCase().includes(searchTerm.toLowerCase())
+                         (sale.items || []).some(item => 
+                           item.product?.name?.toLowerCase().includes(searchTerm.toLowerCase())
                          )
     
     const matchesStatus = !selectedStatus || sale.status === selectedStatus
@@ -401,75 +291,165 @@ export default function SalesPage() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-4">
-                {filteredSales.map((sale) => (
-                  <div key={sale.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="font-mono text-sm text-gray-600">#{sale.id}</span>
+              <>
+                {/* Desktop Table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">ID</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Status</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Pagamento</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Data</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Itens</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Total</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredSales.map((sale) => (
+                        <tr key={sale.id} className="border-b hover:bg-gray-50">
+                          <td className="py-3 px-4">
+                            <div className="font-mono text-sm text-gray-900">#{sale.id}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1">
+                              {getStatusIcon(sale.status)}
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(sale.status)}`}>
+                                {translateSaleStatus(sale.status)}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1 text-sm text-gray-600">
+                              <CreditCard className="w-3 h-3" />
+                              {translatePaymentMethod(sale.paymentMethod)}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-sm text-gray-600">
+                              {formatDateTime(sale.createdAt)}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-sm text-gray-600">
+                              {(sale.items || []).length} {(sale.items || []).length === 1 ? 'item' : 'itens'}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-right">
+                              {sale.discount > 0 && (
+                                <div className="text-xs text-gray-500 line-through">
+                                  {formatCurrency(sale.total)}
+                                </div>
+                              )}
+                              <div className="font-medium text-gray-900">
+                                {formatCurrency(sale.finalTotal)}
+                              </div>
+                              {sale.discount > 0 && (
+                                <div className="text-xs text-green-600">
+                                  Desc: {formatCurrency(sale.discount)}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <Button variant="outline" size="sm" asChild>
+                              <Link href={`/vendas/${sale.id}`}>
+                                <Eye className="w-4 h-4" />
+                              </Link>
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="md:hidden space-y-4">
+                  {filteredSales.map((sale) => (
+                    <Card key={sale.id} className="p-4">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-sm text-gray-900">
+                            #{sale.id}
+                          </span>
                           <div className="flex items-center gap-1">
                             {getStatusIcon(sale.status)}
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(sale.status)}`}>
                               {translateSaleStatus(sale.status)}
                             </span>
                           </div>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            <CreditCard className="w-3 h-3 mr-1" />
-                            {translatePaymentMethod(sale.paymentMethod)}
-                          </span>
                         </div>
-                        
-                        <div className="text-sm text-gray-600 mb-2">
-                          <Calendar className="inline w-4 h-4 mr-1" />
-                          {formatDateTime(sale.createdAt)}
-                        </div>
-                        
-                        <div className="text-sm text-gray-700">
-                          <strong>Itens:</strong> {sale.items.map(item => 
-                            `${item.product?.name} (${item.quantity}x)`
-                          ).join(', ')}
-                        </div>
-                        
-                        {sale.notes && (
-                          <div className="text-sm text-gray-600 mt-1">
-                            <strong>Observações:</strong> {sale.notes}
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center justify-between lg:justify-end gap-4 mt-4 lg:mt-0">
                         <div className="text-right">
                           {sale.discount > 0 && (
-                            <div className="text-sm text-gray-500 line-through">
+                            <div className="text-xs text-gray-500 line-through">
                               {formatCurrency(sale.total)}
                             </div>
                           )}
-                          <div className="text-lg font-bold text-gray-900">
+                          <div className="font-medium text-gray-900">
                             {formatCurrency(sale.finalTotal)}
                           </div>
                           {sale.discount > 0 && (
-                            <div className="text-sm text-green-600">
-                              Desconto: {formatCurrency(sale.discount)}
+                            <div className="text-xs text-green-600">
+                              Desc: {formatCurrency(sale.discount)}
                             </div>
                           )}
                         </div>
-                        
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          asChild
-                        >
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
+                        <div>
+                          <span className="text-gray-600">Pagamento:</span>
+                          <div className="flex items-center gap-1 font-medium">
+                            <CreditCard className="w-3 h-3" />
+                            {translatePaymentMethod(sale.paymentMethod)}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Data:</span>
+                          <div className="font-medium">
+                            {formatDateTime(sale.createdAt)}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="mb-3">
+                        <div className="text-sm text-gray-600 mb-1">Itens ({(sale.items || []).length}):</div>
+                        <div className="space-y-1">
+                          {(sale.items || []).slice(0, 2).map((item, index) => (
+                            <div key={index} className="text-sm">
+                              {item.quantity}x {item.product?.name || 'Produto'} - {formatCurrency(item.total)}
+                            </div>
+                          ))}
+                          {(sale.items || []).length > 2 && (
+                            <div className="text-sm text-gray-500">
+                              +{(sale.items || []).length - 2} {(sale.items || []).length - 2 === 1 ? 'item' : 'itens'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {sale.notes && (
+                        <div className="mb-3">
+                          <div className="text-sm text-gray-600 mb-1">Observações:</div>
+                          <div className="text-sm text-gray-800">{sale.notes}</div>
+                        </div>
+                      )}
+                      
+                      <div className="pt-3 border-t">
+                        <Button variant="outline" size="sm" className="w-full" asChild>
                           <Link href={`/vendas/${sale.id}`}>
                             <Eye className="w-4 h-4 mr-2" />
                             Ver Detalhes
                           </Link>
                         </Button>
                       </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    </Card>
+                  ))}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

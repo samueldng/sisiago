@@ -8,7 +8,12 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // Formatação de moeda brasileira
-export function formatCurrency(value: number): string {
+export function formatCurrency(value: number | null | undefined): string {
+  // Tratar valores inválidos
+  if (value === null || value === undefined || isNaN(value)) {
+    return 'R$ 0,00'
+  }
+  
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,8 +19,11 @@ import {
 import { formatCurrency, debounce } from '@/utils'
 import { Product, CartItem, PaymentMethod } from '@/types'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import ZXingReliableScanner from '@/components/ZXingReliableScanner'
 
-export default function PDVPage() {
+function PDVPageContent() {
+  const searchParams = useSearchParams()
   const [cart, setCart] = useState<CartItem[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -28,6 +31,36 @@ export default function PDVPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | null>(null)
   const [showPayment, setShowPayment] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [showScanner, setShowScanner] = useState(false)
+  const [scanningBarcode, setScanningBarcode] = useState<string | null>(null)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [searchResults, setSearchResults] = useState<Product[]>([])
+  const [pdvOpenTime, setPdvOpenTime] = useState<Date | null>(null)
+
+  // Inicializar data de abertura no cliente
+  useEffect(() => {
+    setPdvOpenTime(new Date())
+  }, [])
+
+  // Detectar parâmetro scanner=true na URL
+  useEffect(() => {
+    const scannerParam = searchParams.get('scanner')
+    if (scannerParam === 'true') {
+      setShowScanner(true)
+    }
+  }, [searchParams])
+
+  // Formatar data e hora
+  const formatDateTime = (date: Date) => {
+    return date.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+  }
 
   // Carregar produtos
   useEffect(() => {
@@ -37,57 +70,12 @@ export default function PDVPage() {
   const loadProducts = async () => {
     try {
       setLoading(true)
-      // TODO: Implementar chamada para API
-      // const response = await fetch('/api/products')
-      // const data = await response.json()
-      // setProducts(data)
-      
-      // Dados mockados para demonstração
-      const mockProducts: Product[] = [
-        {
-          id: '1',
-          name: 'Coca-Cola 2L',
-          barcode: '7894900011517',
-          salePrice: 8.50,
-          costPrice: 6.00,
-          stock: 50,
-          unit: 'UN' as any,
-          description: 'Refrigerante Coca-Cola 2 Litros',
-          isActive: true,
-          categoryId: '1',
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        {
-          id: '2',
-          name: 'Pão de Açúcar 500g',
-          barcode: '7891000100103',
-          salePrice: 4.50,
-          costPrice: 3.20,
-          stock: 25,
-          unit: 'UN' as any,
-          description: 'Pão de açúcar tradicional 500g',
-          isActive: true,
-          categoryId: '2',
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        {
-          id: '3',
-          name: 'Leite Integral 1L',
-          barcode: '7891000053508',
-          salePrice: 5.20,
-          costPrice: 4.10,
-          stock: 30,
-          unit: 'L' as any,
-          description: 'Leite integral UHT 1 litro',
-          isActive: true,
-          categoryId: '3',
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }
-      ]
-      setProducts(mockProducts)
+      const response = await fetch('/api/products?isActive=true')
+      if (!response.ok) {
+        throw new Error('Erro ao carregar produtos')
+      }
+      const data = await response.json()
+      setProducts(data.data || []) // Corrigido: usar 'data' em vez de 'products'
     } catch (error) {
       console.error('Erro ao carregar produtos:', error)
     } finally {
@@ -97,9 +85,28 @@ export default function PDVPage() {
 
   // Busca de produtos com debounce
   const debouncedSearch = useCallback(
-    debounce((term: string) => {
-      // TODO: Implementar busca na API
-      console.log('Buscando:', term)
+    debounce(async (term: string) => {
+      if (term.length >= 1) { // Reduzir para 1 caractere para códigos de barras
+        try {
+          const response = await fetch(`/api/products?search=${encodeURIComponent(term)}&isActive=true&limit=20`)
+          if (response.ok) {
+            const data = await response.json()
+            setSearchResults(data.data || []) // Corrigido: usar 'data' em vez de 'products'
+            setShowSuggestions(true)
+          } else {
+            console.error('Erro na resposta da API:', response.status)
+            setSearchResults([])
+            setShowSuggestions(false)
+          }
+        } catch (error) {
+          console.error('Erro na busca:', error)
+          setSearchResults([])
+          setShowSuggestions(false)
+        }
+      } else {
+        setSearchResults([])
+        setShowSuggestions(false)
+      }
     }, 300),
     []
   )
@@ -107,14 +114,28 @@ export default function PDVPage() {
   useEffect(() => {
     if (searchTerm) {
       debouncedSearch(searchTerm)
+    } else {
+      setSearchResults([])
+      setShowSuggestions(false)
     }
   }, [searchTerm, debouncedSearch])
 
-  // Filtrar produtos
-  const filteredProducts = products.filter(product =>
-    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    product.barcode?.includes(searchTerm)
-  )
+  // Filtrar produtos localmente quando não há termo de busca ou termo muito curto
+  const filteredProducts = searchTerm.length < 2 ? 
+    products.filter(product =>
+      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.barcode?.includes(searchTerm) ||
+      product.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    ).slice(0, 20) : // Limitar a 20 produtos para performance
+    []
+
+  // Selecionar produto da sugestão
+  const selectProductFromSuggestion = (product: Product) => {
+    addToCart(product, 1)
+    setSearchTerm('')
+    setShowSuggestions(false)
+    setSearchResults([])
+  }
 
   // Adicionar produto ao carrinho
   const addToCart = (product: Product, quantity: number = 1) => {
@@ -170,19 +191,46 @@ export default function PDVPage() {
     setSelectedPaymentMethod(null)
   }
 
+  const handleBarcodeScanned = async (barcode: string) => {
+    // Evitar múltiplas execuções simultâneas do mesmo código
+    if (scanningBarcode === barcode || loading) {
+      return
+    }
+    
+    try {
+      setScanningBarcode(barcode)
+      setLoading(true)
+      const response = await fetch(`/api/products/barcode/${barcode}`)
+      const data = await response.json()
+      
+      if (data.success) {
+        addToCart(data.data)
+      } else {
+        alert(`Produto com código ${barcode} não encontrado`)
+      }
+    } catch (error) {
+      console.error('Erro ao buscar produto:', error)
+      alert('Erro ao buscar produto')
+    } finally {
+      setLoading(false)
+      setScanningBarcode(null)
+    }
+  }
+
   // Iniciar scanner
   const startScanner = () => {
-    setIsScanning(true)
-    // TODO: Implementar scanner de código de barras
-    // Simulação de scan
-    setTimeout(() => {
-      const mockBarcode = '7894900011517'
-      const product = products.find(p => p.barcode === mockBarcode)
-      if (product) {
-        addToCart(product)
-      }
-      setIsScanning(false)
-    }, 2000)
+    setShowScanner(true)
+  }
+
+  // Callback do scanner
+  const handleScanResult = (barcode: string) => {
+    handleBarcodeScanned(barcode)
+    setShowScanner(false)
+  }
+
+  // Fechar scanner
+  const closeScanner = () => {
+    setShowScanner(false)
   }
 
   // Finalizar venda
@@ -191,22 +239,48 @@ export default function PDVPage() {
     
     try {
       setLoading(true)
-      // TODO: Implementar finalização da venda
-      console.log('Finalizando venda:', {
-        items: cart,
-        total,
-        paymentMethod: selectedPaymentMethod
+      
+      // Gerar UUID temporário para usuário (desenvolvimento)
+      const tempUserId = crypto.randomUUID()
+      
+      // Preparar dados da venda
+      const saleData = {
+        items: cart.map(item => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+          unitPrice: item.product.salePrice
+        })),
+        discount: discount,
+        paymentMethod: selectedPaymentMethod,
+        notes: '',
+        userId: tempUserId // Usar UUID temporário
+      }
+      
+      console.log('Dados da venda:', saleData)
+      
+      // Enviar para API
+      const response = await fetch('/api/sales', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(saleData)
       })
       
-      // Simular processamento
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const result = await response.json()
+      console.log('Resposta da API:', result)
       
-      // Limpar carrinho após venda
-      clearCart()
-      alert('Venda realizada com sucesso!')
+      if (result.success) {
+        // Limpar carrinho após venda
+        clearCart()
+        alert(`Venda realizada com sucesso! Total: ${formatCurrency(total)}`)
+      } else {
+        console.error('Erro da API:', result)
+        throw new Error(result.error || 'Erro ao processar venda')
+      }
     } catch (error) {
       console.error('Erro ao finalizar venda:', error)
-      alert('Erro ao finalizar venda')
+      alert('Erro ao finalizar venda: ' + (error instanceof Error ? error.message : 'Erro desconhecido'))
     } finally {
       setLoading(false)
     }
@@ -215,18 +289,23 @@ export default function PDVPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header Mobile */}
-      <header className="bg-white shadow-sm border-b lg:hidden">
-        <div className="flex items-center justify-between p-4">
-          <Link href="/" className="flex items-center text-gray-600">
+      <header className="mobile-header">
+        <div className="flex items-center justify-between p-3">
+          <Link href="/" className="flex items-center text-gray-600 touch-friendly">
             <ArrowLeft className="w-5 h-5 mr-2" />
-            Voltar
+            <span className="mobile-optimized">Voltar</span>
           </Link>
-          <h1 className="text-lg font-semibold">Ponto de Venda</h1>
+          <div className="text-center">
+            <h1 className="text-lg font-semibold mobile-optimized">Sis IA Go - PDV</h1>
+            <p className="text-xs text-gray-500 mobile-optimized">
+              Aberto em: {pdvOpenTime ? formatDateTime(pdvOpenTime) : 'Carregando...'}
+            </p>
+          </div>
           <Button
             variant="outline"
             size="sm"
             onClick={startScanner}
-            disabled={isScanning}
+            className="touch-friendly"
           >
             <Scan className="w-4 h-4" />
           </Button>
@@ -247,17 +326,45 @@ export default function PDVPage() {
                       placeholder="Buscar produto ou código..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
+                      onFocus={() => searchTerm.length >= 2 && setShowSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                       className="pl-10"
                     />
+                    
+                    {/* Sugestões de Produtos */}
+                     {showSuggestions && searchResults.length > 0 && (
+                       <div className="search-suggestions">
+                         {searchResults.map((product) => (
+                           <div
+                             key={product.id}
+                             onClick={() => selectProductFromSuggestion(product)}
+                             className="search-suggestion-item"
+                           >
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-gray-900 truncate">{product.name}</p>
+                              <div className="flex items-center gap-2 text-sm text-gray-600">
+                                {product.barcode && (
+                                  <span className="font-mono">{product.barcode}</span>
+                                )}
+                                <span>•</span>
+                                <span>Estoque: {product.stock}</span>
+                              </div>
+                            </div>
+                            <div className="text-right ml-2">
+                              <p className="font-bold text-green-600">{formatCurrency(product.salePrice)}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <Button
                   className="hidden lg:flex ml-4"
                   onClick={startScanner}
-                  disabled={isScanning}
                 >
                   <Scan className="w-4 h-4 mr-2" />
-                  {isScanning ? 'Escaneando...' : 'Scanner'}
+                  Scanner
                 </Button>
               </div>
             </CardHeader>
@@ -323,31 +430,31 @@ export default function PDVPage() {
                             {formatCurrency(item.product.salePrice)} x {item.quantity}
                           </p>
                         </div>
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-1 lg:space-x-2">
                           <Button
                             variant="outline"
                             size="icon"
-                            className="h-8 w-8"
+                            className="h-9 w-9 lg:h-8 lg:w-8 touch-friendly"
                             onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
                           >
-                            <Minus className="w-3 h-3" />
+                            <Minus className="w-4 h-4 lg:w-3 lg:h-3" />
                           </Button>
-                          <span className="w-8 text-center text-sm">{item.quantity}</span>
+                          <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
                           <Button
                             variant="outline"
                             size="icon"
-                            className="h-8 w-8"
+                            className="h-9 w-9 lg:h-8 lg:w-8 touch-friendly"
                             onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
                           >
-                            <Plus className="w-3 h-3" />
+                            <Plus className="w-4 h-4 lg:w-3 lg:h-3" />
                           </Button>
                           <Button
                             variant="outline"
                             size="icon"
-                            className="h-8 w-8 text-red-600 hover:text-red-700"
+                            className="h-9 w-9 lg:h-8 lg:w-8 text-red-600 hover:text-red-700 touch-friendly"
                             onClick={() => removeFromCart(item.product.id)}
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash2 className="w-4 h-4 lg:w-3 lg:h-3" />
                           </Button>
                         </div>
                         <div className="text-right ml-4">
@@ -381,7 +488,7 @@ export default function PDVPage() {
                       {!showPayment ? (
                         <>
                           <Button
-                            className="w-full"
+                            className="w-full h-12 lg:h-10 touch-friendly text-sm lg:text-base font-medium"
                             onClick={() => setShowPayment(true)}
                             disabled={cart.length === 0}
                           >
@@ -389,7 +496,7 @@ export default function PDVPage() {
                           </Button>
                           <Button
                             variant="outline"
-                            className="w-full"
+                            className="w-full h-12 lg:h-10 touch-friendly text-sm lg:text-base"
                             onClick={clearCart}
                             disabled={cart.length === 0}
                           >
@@ -398,12 +505,12 @@ export default function PDVPage() {
                         </>
                       ) : (
                         <>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium">Forma de Pagamento:</p>
+                          <div className="space-y-3">
+                            <p className="text-sm font-medium mobile-optimized">Forma de Pagamento:</p>
                             <div className="grid grid-cols-2 gap-2">
                               <Button
                                 variant={selectedPaymentMethod === PaymentMethod.CASH ? 'default' : 'outline'}
-                                className="text-xs"
+                                className="text-xs lg:text-sm h-12 lg:h-10 touch-friendly"
                                 onClick={() => setSelectedPaymentMethod(PaymentMethod.CASH)}
                               >
                                 <Banknote className="w-4 h-4 mr-1" />
@@ -411,7 +518,7 @@ export default function PDVPage() {
                               </Button>
                               <Button
                                 variant={selectedPaymentMethod === PaymentMethod.PIX ? 'default' : 'outline'}
-                                className="text-xs"
+                                className="text-xs lg:text-sm h-12 lg:h-10 touch-friendly"
                                 onClick={() => setSelectedPaymentMethod(PaymentMethod.PIX)}
                               >
                                 <Smartphone className="w-4 h-4 mr-1" />
@@ -419,7 +526,7 @@ export default function PDVPage() {
                               </Button>
                               <Button
                                 variant={selectedPaymentMethod === PaymentMethod.CREDIT_CARD ? 'default' : 'outline'}
-                                className="text-xs"
+                                className="text-xs lg:text-sm h-12 lg:h-10 touch-friendly"
                                 onClick={() => setSelectedPaymentMethod(PaymentMethod.CREDIT_CARD)}
                               >
                                 <CreditCard className="w-4 h-4 mr-1" />
@@ -427,7 +534,7 @@ export default function PDVPage() {
                               </Button>
                               <Button
                                 variant={selectedPaymentMethod === PaymentMethod.DEBIT_CARD ? 'default' : 'outline'}
-                                className="text-xs"
+                                className="text-xs lg:text-sm h-12 lg:h-10 touch-friendly"
                                 onClick={() => setSelectedPaymentMethod(PaymentMethod.DEBIT_CARD)}
                               >
                                 <CreditCard className="w-4 h-4 mr-1" />
@@ -436,7 +543,7 @@ export default function PDVPage() {
                             </div>
                           </div>
                           <Button
-                            className="w-full"
+                            className="w-full h-12 lg:h-10 touch-friendly text-sm lg:text-base font-medium"
                             onClick={finalizeSale}
                             disabled={!selectedPaymentMethod || loading}
                           >
@@ -444,7 +551,7 @@ export default function PDVPage() {
                           </Button>
                           <Button
                             variant="outline"
-                            className="w-full"
+                            className="w-full h-12 lg:h-10 touch-friendly text-sm lg:text-base"
                             onClick={() => setShowPayment(false)}
                           >
                             Voltar
@@ -460,21 +567,20 @@ export default function PDVPage() {
         </div>
       </div>
 
-      {/* Scanner Overlay */}
-      {isScanning && (
-        <div className="scanner-overlay">
-          <div className="bg-white p-8 rounded-lg text-center">
-            <div className="animate-pulse mb-4">
-              <Scan className="w-16 h-16 mx-auto text-blue-600" />
-            </div>
-            <h3 className="text-lg font-semibold mb-2">Escaneando Código de Barras</h3>
-            <p className="text-gray-600 mb-4">Aponte a câmera para o código de barras</p>
-            <Button variant="outline" onClick={() => setIsScanning(false)}>
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* Scanner de Código de Barras */}
+      <ZXingReliableScanner
+          isOpen={showScanner}
+          onScan={handleBarcodeScanned}
+          onClose={() => setShowScanner(false)}
+        />
     </div>
+  )
+}
+
+export default function PDVPage() {
+  return (
+    <Suspense fallback={<div>Carregando...</div>}>
+      <PDVPageContent />
+    </Suspense>
   )
 }

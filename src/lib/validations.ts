@@ -21,6 +21,9 @@ export const categorySchema = z.object({
   description: z.string().optional(),
 })
 
+export const createCategorySchema = categorySchema
+export const updateCategorySchema = categorySchema.partial()
+
 // Validações para usuários
 export const userSchema = z.object({
   email: z.string().email('Email inválido'),

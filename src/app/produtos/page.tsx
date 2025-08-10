@@ -35,92 +35,18 @@ export default function ProductsPage() {
   const loadProducts = async () => {
     try {
       setLoading(true)
-      // TODO: Implementar chamada para API
-      // const response = await fetch('/api/products')
-      // const data = await response.json()
-      // setProducts(data)
+      const response = await fetch('/api/products')
+      const data = await response.json()
       
-      // Dados mockados para demonstração
-      const mockProducts: Product[] = [
-        {
-          id: '1',
-          name: 'Coca-Cola 2L',
-          barcode: '7894900011517',
-          salePrice: 8.50,
-          costPrice: 6.00,
-          stock: 50,
-          unit: 'UN' as any,
-          description: 'Refrigerante Coca-Cola 2 Litros',
-          isActive: true,
-          categoryId: '1',
-          category: { id: '1', name: 'Bebidas', createdAt: new Date(), updatedAt: new Date() },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        {
-          id: '2',
-          name: 'Pão de Açúcar 500g',
-          barcode: '7891000100103',
-          salePrice: 4.50,
-          costPrice: 3.20,
-          stock: 25,
-          unit: 'UN' as any,
-          description: 'Pão de açúcar tradicional 500g',
-          isActive: true,
-          categoryId: '2',
-          category: { id: '2', name: 'Padaria', createdAt: new Date(), updatedAt: new Date() },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        {
-          id: '3',
-          name: 'Leite Integral 1L',
-          barcode: '7891000053508',
-          salePrice: 5.20,
-          costPrice: 4.10,
-          stock: 30,
-          unit: 'L' as any,
-          description: 'Leite integral UHT 1 litro',
-          isActive: true,
-          categoryId: '3',
-          category: { id: '3', name: 'Laticínios', createdAt: new Date(), updatedAt: new Date() },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        {
-          id: '4',
-          name: 'Arroz Branco 5kg',
-          barcode: '7891000315507',
-          salePrice: 22.90,
-          costPrice: 18.50,
-          stock: 15,
-          unit: 'KG' as any,
-          description: 'Arroz branco tipo 1, pacote 5kg',
-          isActive: true,
-          categoryId: '4',
-          category: { id: '4', name: 'Mercearia', createdAt: new Date(), updatedAt: new Date() },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        {
-          id: '5',
-          name: 'Detergente Líquido 500ml',
-          barcode: '7891150056503',
-          salePrice: 3.80,
-          costPrice: 2.90,
-          stock: 8,
-          unit: 'UN' as any,
-          description: 'Detergente líquido neutro 500ml',
-          isActive: true,
-          categoryId: '5',
-          category: { id: '5', name: 'Limpeza', createdAt: new Date(), updatedAt: new Date() },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }
-      ]
-      setProducts(mockProducts)
+      if (data.success) {
+        setProducts(data.data)
+      } else {
+        console.error('Erro ao carregar produtos:', data.error)
+        alert('Erro ao carregar produtos')
+      }
     } catch (error) {
       console.error('Erro ao carregar produtos:', error)
+      alert('Erro ao conectar com o servidor')
     } finally {
       setLoading(false)
     }
@@ -128,22 +54,21 @@ export default function ProductsPage() {
 
   const loadCategories = async () => {
     try {
-      // TODO: Implementar chamada para API
-      const mockCategories: Category[] = [
-        { id: '1', name: 'Bebidas', createdAt: new Date(), updatedAt: new Date() },
-        { id: '2', name: 'Padaria', createdAt: new Date(), updatedAt: new Date() },
-        { id: '3', name: 'Laticínios', createdAt: new Date(), updatedAt: new Date() },
-        { id: '4', name: 'Mercearia', createdAt: new Date(), updatedAt: new Date() },
-        { id: '5', name: 'Limpeza', createdAt: new Date(), updatedAt: new Date() }
-      ]
-      setCategories(mockCategories)
+      const response = await fetch('/api/categories')
+      const data = await response.json()
+      
+      if (data.success) {
+        setCategories(data.data)
+      } else {
+        console.error('Erro ao carregar categorias:', data.error)
+      }
     } catch (error) {
       console.error('Erro ao carregar categorias:', error)
     }
   }
 
   // Filtrar produtos
-  const filteredProducts = products.filter(product => {
+  const filteredProducts = (products || []).filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          product.barcode?.includes(searchTerm) ||
                          product.description?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -154,18 +79,26 @@ export default function ProductsPage() {
   })
 
   // Calcular estatísticas
-  const totalProducts = products.length
-  const activeProducts = products.filter(p => p.isActive).length
-  const lowStockProducts = products.filter(p => p.stock <= 10).length
-  const totalValue = products.reduce((sum, p) => sum + (p.salePrice * p.stock), 0)
+  const totalProducts = products?.length || 0
+  const activeProducts = products?.filter(p => p.isActive).length || 0
+  const lowStockProducts = products?.filter(p => p.stock <= 10).length || 0
+  const totalValue = products?.reduce((sum, p) => sum + (p.salePrice * p.stock), 0) || 0
 
   const deleteProduct = async (productId: string) => {
     if (!confirm('Tem certeza que deseja excluir este produto?')) return
     
     try {
-      // TODO: Implementar chamada para API
-      setProducts(prev => prev.filter(p => p.id !== productId))
-      alert('Produto excluído com sucesso!')
+      const response = await fetch(`/api/products/${productId}`, {
+        method: 'DELETE'
+      })
+      const data = await response.json()
+      
+      if (data.success) {
+        setProducts(prev => prev.filter(p => p.id !== productId))
+        alert('Produto excluído com sucesso!')
+      } else {
+        alert(data.error || 'Erro ao excluir produto')
+      }
     } catch (error) {
       console.error('Erro ao excluir produto:', error)
       alert('Erro ao excluir produto')
@@ -182,29 +115,35 @@ export default function ProductsPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center">
-              <Link href="/" className="flex items-center text-gray-600 mr-4">
-                <ArrowLeft className="w-5 h-5 mr-2" />
-                <span className="hidden sm:block">Voltar</span>
+        <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-16">
+            <div className="flex items-center min-w-0 flex-1">
+              <Link href="/" className="flex items-center text-gray-600 mr-2 sm:mr-4 touch-friendly">
+                <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" />
+                <span className="hidden sm:block text-sm">Voltar</span>
               </Link>
-              <Package className="w-6 h-6 mr-2 text-purple-600" />
-              <h1 className="text-xl font-semibold text-gray-900">Produtos</h1>
+              <Package className="w-5 h-5 sm:w-6 sm:h-6 mr-1 sm:mr-2 text-purple-600" />
+              <h1 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">Produtos</h1>
             </div>
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm">
-                <Download className="w-4 h-4 mr-2" />
-                Exportar
+            <div className="flex items-center space-x-1 sm:space-x-2">
+              <Button variant="outline" size="sm" className="hidden md:flex touch-friendly">
+                <Download className="w-4 h-4 mr-1 sm:mr-2" />
+                <span className="hidden lg:block">Exportar</span>
               </Button>
-              <Button variant="outline" size="sm">
-                <Upload className="w-4 h-4 mr-2" />
-                Importar
+              <Button variant="outline" size="sm" className="hidden md:flex touch-friendly">
+                <Upload className="w-4 h-4 mr-1 sm:mr-2" />
+                <span className="hidden lg:block">Importar</span>
               </Button>
-              <Button size="sm" asChild>
+              <Button variant="outline" size="sm" asChild className="touch-friendly">
+                <Link href="/categorias">
+                  <Package className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:block">Categorias</span>
+                </Link>
+              </Button>
+              <Button size="sm" asChild className="touch-friendly">
                 <Link href="/produtos/novo">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Novo Produto
+                  <Plus className="w-4 h-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:block">Novo</span>
                 </Link>
               </Button>
             </div>
@@ -334,96 +273,179 @@ export default function ProductsPage() {
             ) : filteredProducts.length === 0 ? (
               <div className="text-center py-8">
                 <Package className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500">Nenhum produto encontrado</p>
-                <Button className="mt-4" asChild>
-                  <Link href="/produtos/novo">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Cadastrar Primeiro Produto
-                  </Link>
-                </Button>
+                <p className="text-gray-500">
+                  {searchTerm ? 'Nenhum produto encontrado' : 'Nenhum produto cadastrado'}
+                </p>
+                {!searchTerm && (
+                  <Button className="mt-4" asChild>
+                    <Link href="/produtos/novo">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Cadastrar Primeiro Produto
+                    </Link>
+                  </Button>
+                )}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-3 px-4 font-medium text-gray-900">Produto</th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-900">Categoria</th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-900">Preço</th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-900">Estoque</th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-900">Status</th>
-                      <th className="text-right py-3 px-4 font-medium text-gray-900">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredProducts.map((product) => {
-                      const stockStatus = getStockStatus(product.stock)
-                      return (
-                        <tr key={product.id} className="border-b hover:bg-gray-50">
-                          <td className="py-3 px-4">
-                            <div>
-                              <div className="font-medium text-gray-900">{product.name}</div>
-                              <div className="text-sm text-gray-500">{product.barcode}</div>
-                              {product.description && (
-                                <div className="text-xs text-gray-400 mt-1">{product.description}</div>
+              <>
+                {/* Desktop Table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Produto</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Categoria</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Preço</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Estoque</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Status</th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-900">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredProducts.map((product) => {
+                        const stockStatus = getStockStatus(product.stock)
+                        return (
+                          <tr key={product.id} className="border-b hover:bg-gray-50">
+                            <td className="py-3 px-4">
+                              <div>
+                                <div className="font-medium text-gray-900">{product.name}</div>
+                                <div className="text-sm text-gray-500">{product.barcode}</div>
+                                {product.description && (
+                                  <div className="text-xs text-gray-400 mt-1">{product.description}</div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                {product.category?.name}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="font-medium">{formatCurrency(product.salePrice)}</div>
+                              {product.costPrice && (
+                                <div className="text-sm text-gray-500">
+                                  Custo: {formatCurrency(product.costPrice)}
+                                </div>
                               )}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                              {product.category?.name}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="font-medium">{product.stock} {translateUnit(product.unit)}</div>
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${stockStatus.color}`}>
+                                {stockStatus.text}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                product.isActive 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : 'bg-red-100 text-red-800'
+                              }`}>
+                                {product.isActive ? 'Ativo' : 'Inativo'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  asChild
+                                >
+                                  <Link href={`/produtos/${product.id}/editar`}>
+                                    <Edit className="w-4 h-4" />
+                                  </Link>
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => deleteProduct(product.id)}
+                                  className="text-red-600 hover:text-red-700"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="md:hidden space-y-4">
+                  {filteredProducts.map((product) => {
+                    const stockStatus = getStockStatus(product.stock)
+                    return (
+                      <Card key={product.id} className="p-4">
+                        <div className="flex justify-between items-start mb-3">
+                          <div className="flex-1">
+                            <h3 className="font-medium text-gray-900 text-lg">{product.name}</h3>
+                            <p className="text-gray-600 text-sm mt-1">
+                              {product.barcode && `Código: ${product.barcode}`}
+                            </p>
+                            {product.description && (
+                              <p className="text-gray-500 text-xs mt-1">{product.description}</p>
+                            )}
+                          </div>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ml-2 ${
+                            product.isActive 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {product.isActive ? 'Ativo' : 'Inativo'}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
+                          <div>
+                            <span className="text-gray-500">Categoria:</span>
+                            <div className="font-medium">{product.category?.name || 'Sem categoria'}</div>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Preço:</span>
                             <div className="font-medium">{formatCurrency(product.salePrice)}</div>
                             {product.costPrice && (
-                              <div className="text-sm text-gray-500">
-                                Custo: {formatCurrency(product.costPrice)}
-                              </div>
+                              <div className="text-xs text-gray-500">Custo: {formatCurrency(product.costPrice)}</div>
                             )}
-                          </td>
-                          <td className="py-3 px-4">
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Estoque:</span>
                             <div className="font-medium">{product.stock} {translateUnit(product.unit)}</div>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Status:</span>
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${stockStatus.color}`}>
                               {stockStatus.text}
                             </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              product.isActive 
-                                ? 'bg-green-100 text-green-800' 
-                                : 'bg-red-100 text-red-800'
-                            }`}>
-                              {product.isActive ? 'Ativo' : 'Inativo'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end space-x-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                asChild
-                              >
-                                <Link href={`/produtos/${product.id}/editar`}>
-                                  <Edit className="w-4 h-4" />
-                                </Link>
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => deleteProduct(product.id)}
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex gap-2 pt-3 border-t">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
+                            className="flex-1"
+                          >
+                            <Link href={`/produtos/${product.id}/editar`}>
+                              <Edit className="w-4 h-4 mr-2" />
+                              Editar
+                            </Link>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => deleteProduct(product.id)}
+                            className="flex-1 text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Excluir
+                          </Button>
+                        </div>
+                      </Card>
+                    )
+                  })}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

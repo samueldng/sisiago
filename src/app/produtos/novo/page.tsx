@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { ProductUnit, Category } from '@/types'
 import { translateUnit } from '@/utils'
+import { BarcodeScanner } from '@/components/BarcodeScanner'
 
 interface ProductFormData {
   name: string
@@ -49,17 +50,18 @@ export default function NewProductPage() {
 
   const loadCategories = async () => {
     try {
-      // TODO: Implementar chamada para API
-      const mockCategories: Category[] = [
-        { id: '1', name: 'Bebidas', createdAt: new Date(), updatedAt: new Date() },
-        { id: '2', name: 'Padaria', createdAt: new Date(), updatedAt: new Date() },
-        { id: '3', name: 'Laticínios', createdAt: new Date(), updatedAt: new Date() },
-        { id: '4', name: 'Mercearia', createdAt: new Date(), updatedAt: new Date() },
-        { id: '5', name: 'Limpeza', createdAt: new Date(), updatedAt: new Date() }
-      ]
-      setCategories(mockCategories)
+      const response = await fetch('/api/categories')
+      const data = await response.json()
+      
+      if (data.success) {
+        setCategories(data.data)
+      } else {
+        console.error('Erro ao carregar categorias:', data.error)
+        alert('Erro ao carregar categorias')
+      }
     } catch (error) {
       console.error('Erro ao carregar categorias:', error)
+      alert('Erro ao conectar com o servidor')
     }
   }
 
@@ -125,14 +127,22 @@ export default function NewProductPage() {
         isActive: true
       }
 
-      // TODO: Implementar chamada para API
-      console.log('Criando produto:', productData)
+      const response = await fetch('/api/products', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(productData)
+      })
       
-      // Simular criação
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const data = await response.json()
       
-      alert('Produto cadastrado com sucesso!')
-      router.push('/produtos')
+      if (data.success) {
+        alert('Produto cadastrado com sucesso!')
+        router.push('/produtos')
+      } else {
+        alert(data.error || 'Erro ao cadastrar produto')
+      }
     } catch (error) {
       console.error('Erro ao criar produto:', error)
       alert('Erro ao cadastrar produto')
@@ -143,13 +153,15 @@ export default function NewProductPage() {
 
   const startBarcodeScanner = () => {
     setIsScanning(true)
-    // TODO: Implementar scanner de código de barras
-    // Simulação de scan
-    setTimeout(() => {
-      const mockBarcode = '7894900011517'
-      handleInputChange('barcode', mockBarcode)
-      setIsScanning(false)
-    }, 2000)
+  }
+
+  const handleScanResult = (barcode: string) => {
+    handleInputChange('barcode', barcode)
+    setIsScanning(false)
+  }
+
+  const closeBarcodeScanner = () => {
+    setIsScanning(false)
   }
 
   const calculateMargin = () => {
@@ -391,21 +403,13 @@ export default function NewProductPage() {
         </form>
       </main>
 
-      {/* Scanner Overlay */}
-      {isScanning && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-8 rounded-lg text-center">
-            <div className="animate-pulse mb-4">
-              <Scan className="w-16 h-16 mx-auto text-blue-600" />
-            </div>
-            <h3 className="text-lg font-semibold mb-2">Escaneando Código de Barras</h3>
-            <p className="text-gray-600 mb-4">Aponte a câmera para o código de barras</p>
-            <Button variant="outline" onClick={() => setIsScanning(false)}>
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* Scanner de Código de Barras */}
+      <BarcodeScanner
+        isOpen={isScanning}
+        onScan={handleScanResult}
+        onClose={closeBarcodeScanner}
+        title="Scanner - Cadastro de Produto"
+      />
     </div>
   )
 }

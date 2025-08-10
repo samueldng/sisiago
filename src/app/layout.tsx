@@ -5,15 +5,16 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Sis Iago - Sistema PDV',
-  description: 'Sistema de Ponto de Venda moderno e mobile-first',
+  title: 'Sis IA Go - Sistema PDV',
+  description: 'Sistema de Ponto de Venda inteligente e mobile-first',
   manifest: '/manifest.json',
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
   themeColor: '#000000',
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-  },
 }
 
 export default function RootLayout({

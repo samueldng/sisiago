@@ -32,9 +32,12 @@ export default function HomePage() {
     totalProducts: 0,
     lowStockProducts: 0
   })
-  const [currentTime, setCurrentTime] = useState(new Date())
+  const [currentTime, setCurrentTime] = useState<Date | null>(null)
 
   useEffect(() => {
+    // Definir horário inicial no cliente
+    setCurrentTime(new Date())
+    
     // Atualizar horário a cada segundo
     const timer = setInterval(() => {
       setCurrentTime(new Date())
@@ -134,18 +137,18 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-gray-900">Sis Iago</h1>
-              <span className="ml-2 text-sm text-gray-500">PDV</span>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Sis IA Go</h1>
+              <span className="ml-2 text-xs sm:text-sm text-gray-500 bg-blue-100 px-2 py-1 rounded-full">PDV</span>
             </div>
-            <div className="flex items-center space-x-4">
-              <div className="text-sm text-gray-600">
+            <div className="flex items-center space-x-2 sm:space-x-4">
+              <div className="hidden sm:block text-sm text-gray-600">
                 <Calendar className="inline w-4 h-4 mr-1" />
-                {formatDateTime(currentTime)}
+                {currentTime ? formatDateTime(currentTime) : '--:--'}
               </div>
               <Button variant="outline" size="sm" asChild>
                 <Link href="/configuracoes">
-                  <Settings className="w-4 h-4 mr-2" />
-                  Configurações
+                  <Settings className="w-4 h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Configurações</span>
                 </Link>
               </Button>
             </div>
@@ -227,7 +230,21 @@ export default function HomePage() {
                     Produtos
                   </CardTitle>
                   <CardDescription>
-                    Cadastro e gerenciamento de produtos, categorias e estoque
+                    Cadastro e gerenciamento de produtos e estoque
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            </Link>
+
+            <Link href="/categorias">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Package className="w-5 h-5 mr-2 text-indigo-600" />
+                    Categorias
+                  </CardTitle>
+                  <CardDescription>
+                    Gerenciamento de categorias de produtos
                   </CardDescription>
                 </CardHeader>
               </Card>
