@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { z } from 'zod'
+import { createAuditLog } from '@/lib/supabase'
 
 // Schema de validação para atualização de produto
 const updateProductSchema = z.object({
@@ -12,7 +13,22 @@ const updateProductSchema = z.object({
   stock: z.number().int().min(0, 'Estoque não pode ser negativo'),
   unit: z.enum(['UN', 'KG', 'G', 'L', 'ML', 'M', 'CM']),
   categoryId: z.string().uuid('ID da categoria inválido'),
-  isActive: z.boolean().optional().default(true)
+  isActive: z.boolean().optional().default(true),
+  isPerishable: z.boolean().default(false),
+  expiryDate: z.string().datetime().optional()
+}).refine((data) => {
+  // Se o produto é perecível, a data de vencimento é obrigatória
+  if (data.isPerishable && !data.expiryDate) {
+    return false;
+  }
+  // Se não é perecível, não deve ter data de vencimento
+  if (!data.isPerishable && data.expiryDate) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Produtos perecíveis devem ter data de vencimento e produtos não perecíveis não devem ter',
+  path: ['expiryDate']
 })
 
 // GET /api/products/[id] - Buscar produto por ID
@@ -59,6 +75,8 @@ export async function GET(
     unit: product.unit,
     description: product.description,
     isActive: product.is_active,
+    isPerishable: product.is_perishable || false,
+    expiryDate: product.expiry_date,
     categoryId: product.category_id,
     category: product.category,
     createdAt: product.created_at,
@@ -107,10 +125,10 @@ export async function PUT(
 
     const productData = validationResult.data
 
-    // Verificar se o produto existe
+    // Verificar se o produto existe e buscar valores antigos para auditoria
     const { data: existingProduct, error: checkError } = await supabase
       .from('products')
-      .select('id')
+      .select('*')
       .eq('id', id)
       .single()
 
@@ -165,6 +183,8 @@ export async function PUT(
         unit: productData.unit,
         category_id: productData.categoryId,
         is_active: productData.isActive,
+        is_perishable: productData.isPerishable,
+        expiry_date: productData.expiryDate,
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
@@ -193,10 +213,61 @@ export async function PUT(
       unit: updatedProduct.unit,
       description: updatedProduct.description,
       isActive: updatedProduct.is_active,
+      isPerishable: updatedProduct.is_perishable,
+      expiryDate: updatedProduct.expiry_date,
       categoryId: updatedProduct.category_id,
       category: updatedProduct.category,
       createdAt: updatedProduct.created_at,
       updatedAt: updatedProduct.updated_at
+    }
+    
+    // Criar log de auditoria
+    try {
+      const userAgent = request.headers.get('user-agent') || undefined
+      const forwardedFor = request.headers.get('x-forwarded-for')
+      const realIp = request.headers.get('x-real-ip')
+      const ipAddress = forwardedFor?.split(',')[0] || realIp || undefined
+      const userId = request.headers.get('x-user-id') || 'sistema'
+      const userEmail = request.headers.get('x-user-email') || 'sistema@sisiago.com'
+      
+      await createAuditLog({
+        tableName: 'products',
+        operation: 'UPDATE',
+        recordId: id,
+        oldValues: {
+          name: existingProduct.name,
+          barcode: existingProduct.barcode,
+          sale_price: existingProduct.sale_price,
+          cost_price: existingProduct.cost_price,
+          stock: existingProduct.stock,
+          unit: existingProduct.unit,
+          description: existingProduct.description,
+          category_id: existingProduct.category_id,
+          is_active: existingProduct.is_active,
+          is_perishable: existingProduct.is_perishable,
+          expiry_date: existingProduct.expiry_date
+        },
+        newValues: {
+          name: updatedProduct.name,
+          barcode: updatedProduct.barcode,
+          sale_price: updatedProduct.sale_price,
+          cost_price: updatedProduct.cost_price,
+          stock: updatedProduct.stock,
+          unit: updatedProduct.unit,
+          description: updatedProduct.description,
+          category_id: updatedProduct.category_id,
+          is_active: updatedProduct.is_active,
+          is_perishable: updatedProduct.is_perishable,
+          expiry_date: updatedProduct.expiry_date
+        },
+        userId: userId,
+        userEmail: userEmail,
+        ipAddress: ipAddress,
+        userAgent: userAgent
+      })
+    } catch (auditError) {
+      console.error('Erro ao criar log de auditoria:', auditError)
+      // Não falhar a operação por causa do log
     }
     
     return NextResponse.json({
@@ -229,10 +300,10 @@ export async function DELETE(
       )
     }
 
-    // Verificar se o produto existe
+    // Verificar se o produto existe e buscar dados para auditoria
     const { data: existingProduct, error: checkError } = await supabase
       .from('products')
-      .select('id, name')
+      .select('*')
       .eq('id', id)
       .single()
 
@@ -277,6 +348,42 @@ export async function DELETE(
         { success: false, error: 'Erro ao excluir produto' },
         { status: 500 }
       )
+    }
+
+    // Criar log de auditoria
+    try {
+      const userAgent = request.headers.get('user-agent') || undefined
+      const forwardedFor = request.headers.get('x-forwarded-for')
+      const realIp = request.headers.get('x-real-ip')
+      const ipAddress = forwardedFor?.split(',')[0] || realIp || undefined
+      const userId = request.headers.get('x-user-id') || 'sistema'
+      const userEmail = request.headers.get('x-user-email') || 'sistema@sisiago.com'
+      
+      await createAuditLog({
+        tableName: 'products',
+        operation: 'DELETE',
+        recordId: id,
+        oldValues: {
+          name: existingProduct.name,
+          barcode: existingProduct.barcode,
+          sale_price: existingProduct.sale_price,
+          cost_price: existingProduct.cost_price,
+          stock: existingProduct.stock,
+          unit: existingProduct.unit,
+          description: existingProduct.description,
+          category_id: existingProduct.category_id,
+          is_active: existingProduct.is_active,
+          is_perishable: existingProduct.is_perishable,
+          expiry_date: existingProduct.expiry_date
+        },
+        userId: userId,
+        userEmail: userEmail,
+        ipAddress: ipAddress,
+        userAgent: userAgent
+      })
+    } catch (auditError) {
+      console.error('Erro ao criar log de auditoria:', auditError)
+      // Não falhar a operação por causa do log
     }
 
     return NextResponse.json({

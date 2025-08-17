@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   ShoppingCart,
@@ -12,60 +14,72 @@ import {
   Users,
   Settings,
   Scan,
+  Calendar,
   TrendingUp,
-  DollarSign,
-  Calendar
+  LogOut,
+  User,
+  Clock,
+  FileText
 } from 'lucide-react'
-import { formatCurrency, formatDateTime } from '@/utils'
+import { formatDateTime } from '@/utils'
+import { ClientOnlyExpiredProductsAlert } from '@/components/ClientOnlyExpiredProductsAlert'
+import { useAuth } from '@/contexts/AuthContext'
+import { ProtectedRoute } from '@/components/ProtectedRoute'
 
-interface DashboardStats {
-  todaySales: number
-  todayRevenue: number
-  totalProducts: number
-  lowStockProducts: number
-}
+// Importação dinâmica para evitar problemas de hidratação
+const DashboardStats = dynamic(() => import('@/components/DashboardStats'), {
+  ssr: false,
+  loading: () => (
+    <section className="mb-8">
+      <h2 className="text-lg font-semibold text-gray-900 mb-4">Resumo do Dia</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Card key={index}>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="h-4 bg-gray-200 rounded w-20 mb-2 animate-pulse"></div>
+                  <div className="h-8 bg-gray-200 rounded w-16 mb-1 animate-pulse"></div>
+                  <div className="h-3 bg-gray-200 rounded w-24 animate-pulse"></div>
+                </div>
+                <div className="w-8 h-8 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </section>
+  )
+})
+
+const ClientTime = dynamic(() => import('@/components/ClientTime'), {
+  ssr: false,
+  loading: () => <span>--:--</span>
+})
+
+
+
+// Interface movida para o hook useDashboardStats
 
 export default function HomePage() {
-  const [stats, setStats] = useState<DashboardStats>({
-    todaySales: 0,
-    todayRevenue: 0,
-    totalProducts: 0,
-    lowStockProducts: 0
-  })
-  const [currentTime, setCurrentTime] = useState<Date | null>(null)
+  const [mounted, setMounted] = useState(false);
+  const { user, logout } = useAuth();
 
   useEffect(() => {
-    // Definir horário inicial no cliente
-    setCurrentTime(new Date())
-    
-    // Atualizar horário a cada segundo
-    const timer = setInterval(() => {
-      setCurrentTime(new Date())
-    }, 1000)
+    setMounted(true);
+  }, []);
 
-    // Carregar estatísticas do dashboard
-    loadDashboardStats()
-
-    return () => clearInterval(timer)
-  }, [])
-
-  const loadDashboardStats = async () => {
-    try {
-      // TODO: Implementar chamada para API
-      // const response = await fetch('/api/dashboard/stats')
-      // const data = await response.json()
-      // setStats(data)
-      
-      // Dados mockados para demonstração
-      setStats({
-        todaySales: 15,
-        todayRevenue: 1250.50,
-        totalProducts: 150,
-        lowStockProducts: 5
-      })
-    } catch (error) {
-      console.error('Erro ao carregar estatísticas:', error)
-    }
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-7xl mx-auto p-6 space-y-8">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-64 mb-4"></div>
+            <div className="h-4 bg-gray-200 rounded w-96"></div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const quickActions = [
@@ -99,57 +113,57 @@ export default function HomePage() {
     }
   ]
 
-  const statsCards = [
-    {
-      title: 'Vendas Hoje',
-      value: stats.todaySales.toString(),
-      description: 'Transações realizadas',
-      icon: ShoppingCart,
-      color: 'text-green-600'
-    },
-    {
-      title: 'Faturamento Hoje',
-      value: formatCurrency(stats.todayRevenue),
-      description: 'Receita do dia',
-      icon: DollarSign,
-      color: 'text-blue-600'
-    },
-    {
-      title: 'Total de Produtos',
-      value: stats.totalProducts.toString(),
-      description: 'Itens cadastrados',
-      icon: Package,
-      color: 'text-purple-600'
-    },
-    {
-      title: 'Estoque Baixo',
-      value: stats.lowStockProducts.toString(),
-      description: 'Produtos em falta',
-      icon: TrendingUp,
-      color: 'text-red-600'
-    }
-  ]
+
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <ProtectedRoute>
+      <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Sis IA Go</h1>
-              <span className="ml-2 text-xs sm:text-sm text-gray-500 bg-blue-100 px-2 py-1 rounded-full">PDV</span>
+              <img 
+              src="/logo.svg" 
+              alt="Logo" 
+              className="h-8 w-auto"
+            />
+              <span className="ml-3 text-xs sm:text-sm text-gray-500 bg-blue-100 px-2 py-1 rounded-full">PDV</span>
             </div>
             <div className="flex items-center space-x-2 sm:space-x-4">
-              <div className="hidden sm:block text-sm text-gray-600">
-                <Calendar className="inline w-4 h-4 mr-1" />
-                {currentTime ? formatDateTime(currentTime) : '--:--'}
+              {/* Relógio em tempo real - visível em todas as telas */}
+              <div className="text-sm font-mono bg-gray-100 px-3 py-1 rounded-lg">
+                <Calendar className="inline w-4 h-4 mr-1 text-blue-600" />
+                <ClientTime />
               </div>
+              
+              {/* Informações do usuário */}
+              {user && (
+                <div className="hidden sm:flex items-center space-x-2 text-sm text-gray-600">
+                  <User className="w-4 h-4" />
+                  <span>{user.name || user.email}</span>
+                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                    {user.role === 'admin' ? 'Admin' : user.role === 'manager' ? 'Gerente' : 'Usuário'}
+                  </span>
+                </div>
+              )}
+              
               <Button variant="outline" size="sm" asChild>
                 <Link href="/configuracoes">
                   <Settings className="w-4 h-4 sm:mr-2" />
                   <span className="hidden sm:inline">Configurações</span>
                 </Link>
+              </Button>
+              
+              {/* Botão de logout */}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={logout}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                <LogOut className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Sair</span>
               </Button>
             </div>
           </div>
@@ -181,27 +195,11 @@ export default function HomePage() {
         </section>
 
         {/* Estatísticas */}
+        <DashboardStats />
+
+        {/* Alertas de Produtos Vencidos */}
         <section className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Resumo do Dia</h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {statsCards.map((stat) => {
-              const Icon = stat.icon
-              return (
-                <Card key={stat.title}>
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">{stat.title}</p>
-                        <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                        <p className="text-xs text-gray-500">{stat.description}</p>
-                      </div>
-                      <Icon className={`w-8 h-8 ${stat.color}`} />
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
+          <ClientOnlyExpiredProductsAlert daysAhead={7} />
         </section>
 
         {/* Navegação Principal */}
@@ -305,9 +303,44 @@ export default function HomePage() {
                 </CardHeader>
               </Card>
             </Link>
+
+            {/* Link para usuários - apenas para administradores */}
+            {user?.role === 'admin' && (
+              <Link href="/users">
+                <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Users className="w-5 h-5 mr-2 text-indigo-600" />
+                      Usuários
+                    </CardTitle>
+                    <CardDescription>
+                      Gerenciar usuários do sistema
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              </Link>
+            )}
+
+            {/* Link para logs de auditoria - apenas para administradores */}
+            {user?.role === 'admin' && (
+              <Link href="/audit-logs">
+                <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <FileText className="w-5 h-5 mr-2 text-gray-600" />
+                      Logs de Auditoria
+                    </CardTitle>
+                    <CardDescription>
+                      Visualizar logs de atividades do sistema
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              </Link>
+            )}
           </div>
         </section>
       </main>
-    </div>
+      </div>
+    </ProtectedRoute>
   )
 }

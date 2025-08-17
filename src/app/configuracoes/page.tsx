@@ -25,20 +25,23 @@ interface Configuracoes {
 export default function ConfiguracoesPage() {
   const [configuracoes, setConfiguracoes] = useState<Configuracoes>({
     empresa: {
-      nome: 'Sis IA Go',
+      nome: '',
       cnpj: '',
       endereco: ''
     },
     pdv: {
-      impressora: 'padrão',
+      impressora: '',
       gaveta: false
     }
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [currentDate, setCurrentDate] = useState<string>('')
 
   useEffect(() => {
     loadConfiguracoes()
+    // Definir data atual apenas no cliente
+    setCurrentDate(new Date().toLocaleDateString('pt-BR'))
   }, [])
 
   const loadConfiguracoes = async () => {
@@ -237,7 +240,7 @@ export default function ConfiguracoesPage() {
             <div>
               <Label className="text-sm font-medium">Última Atualização</Label>
               <p className="text-sm text-muted-foreground">
-                {new Date().toLocaleDateString('pt-BR')}
+                {currentDate || 'Carregando...'}
               </p>
             </div>
           </div>

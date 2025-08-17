@@ -93,7 +93,7 @@ O deploy será automático a cada push na branch principal se conectado via GitH
 
 ### Erro 404 em APIs
 - Confirme se todas as rotas API estão funcionando localmente
-- Verifique se não há imports do Prisma restantes
+- Verifique se todas as APIs usam o cliente Supabase
 
 ## Monitoramento
 
@@ -103,4 +103,4 @@ O deploy será automático a cada push na branch principal se conectado via GitH
 
 ---
 
-**Nota**: Este projeto foi migrado do Prisma para Supabase. Certifique-se de que todas as APIs estão usando o cliente Supabase antes do deploy.
+**Nota**: Este projeto usa Supabase como banco de dados. Certifique-se de que todas as variáveis de ambiente do Supabase estão configuradas.

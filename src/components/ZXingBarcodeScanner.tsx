@@ -139,10 +139,19 @@ export default function ZXingBarcodeScanner({ isOpen, onClose, onScan }: ZXingBa
 
   // Iniciar scanner ZXing
   const startScanner = useCallback(async () => {
+    console.log('🚀 Iniciando ZXing scanner...', { currentCamera, isInitializing, isScanning })
+    
+    // Evitar múltiplas inicializações
+    if (isInitializing || isScanning) {
+      console.log('⏸️ Scanner já está inicializando ou ativo, ignorando...')
+      return Promise.resolve()
+    }
+    
     try {
-      console.log('🎥 Iniciando ZXing scanner...', { currentCamera, isInitializing, isScanning })
       setIsInitializing(true)
-      setError(null)
+      setError('')
+      setScanCount(0)
+      setLastScanTime(0)
       
       // Parar scanner anterior se existir
       if (readerRef.current) {
@@ -260,8 +269,24 @@ export default function ZXingBarcodeScanner({ isOpen, onClose, onScan }: ZXingBa
         video.addEventListener('loadedmetadata', onLoadedMetadata)
         video.addEventListener('error', onError)
         
+        // Limpar srcObject anterior se existir
+        if (video.srcObject) {
+          video.srcObject = null
+        }
+        
         video.srcObject = stream
-        video.play().catch(reject)
+        
+        // Aguardar um pouco antes de tentar reproduzir
+        setTimeout(() => {
+          if (video && video.srcObject === stream && mountedRef.current) {
+            video.play().catch((playError) => {
+              console.warn('⚠️ Erro ao reproduzir vídeo:', playError)
+              if (playError.name !== 'AbortError') {
+                reject(playError)
+              }
+            })
+          }
+        }, 100)
       })
       
       console.log('🎉 Vídeo carregado, iniciando detecção ZXing...')
@@ -299,6 +324,9 @@ export default function ZXingBarcodeScanner({ isOpen, onClose, onScan }: ZXingBa
       // Aguardar um pouco antes de iniciar o scan
       setTimeout(scanContinuously, 500)
       
+      console.log('🎉 Scanner ZXing inicializado com sucesso!')
+      return Promise.resolve()
+      
     } catch (error: any) {
       console.error('💥 Erro capturado no ZXing scanner:', {
         name: error.name,
@@ -331,12 +359,15 @@ export default function ZXingBarcodeScanner({ isOpen, onClose, onScan }: ZXingBa
         errorMessage = 'Timeout ao acessar a câmera. Tente novamente.'
       } else if (error.message?.includes('getUserMedia')) {
         errorMessage = 'Erro ao acessar getUserMedia. Verifique se o navegador suporta câmera.'
+      } else if (error.name === 'AbortError') {
+        errorMessage = 'Operação de vídeo foi interrompida. Tente novamente.'
       } else {
         errorMessage = `Erro ao acessar câmera: ${error.message || 'Erro desconhecido'}`
       }
       
       console.error('🚨 Mensagem de erro final:', errorMessage)
       setError(errorMessage)
+      return Promise.reject(error)
     }
   }, [currentCamera, initializeReader, handleScanResult, isScanning])
 
@@ -398,20 +429,36 @@ export default function ZXingBarcodeScanner({ isOpen, onClose, onScan }: ZXingBa
     }
   }, [manualInput, handleScanResult])
 
-  // Efeitos
+  // Ref para controlar inicialização
+  const initializationRef = useRef<boolean>(false)
+  const mountedRef = useRef<boolean>(false)
+
+  // Efeito principal para controlar o scanner
   useEffect(() => {
-    console.log('🔄 useEffect isOpen executado:', { isOpen, isInitializing, error, isScanning })
+    console.log('🔄 useEffect principal executado:', { isOpen, currentCamera, isInitializing, error })
     
     if (isOpen) {
+      // Marcar como montado
+      mountedRef.current = true
+      
       console.log('✅ Scanner aberto, detectando câmeras...')
       detectCameras()
       
       // Aguardar a renderização do elemento de vídeo antes de iniciar o scanner
       const initializeScanner = () => {
+        // Verificar se ainda está montado e não está inicializando
+        if (!mountedRef.current || initializationRef.current) {
+          console.log('⏸️ Scanner desmontado ou já inicializando, cancelando...')
+          return
+        }
+        
         // Verificar se o elemento de vídeo está disponível
         if (videoRef.current) {
           console.log('📹 Elemento de vídeo encontrado, iniciando ZXing scanner')
-          startScanner()
+          initializationRef.current = true
+          startScanner().finally(() => {
+            initializationRef.current = false
+          })
         } else {
           console.log('⏳ Elemento de vídeo não encontrado, aguardando...')
           // Tentar novamente após um delay
@@ -426,38 +473,18 @@ export default function ZXingBarcodeScanner({ isOpen, onClose, onScan }: ZXingBa
       })
     } else {
       console.log('❌ Scanner fechado, chamando stopScanner')
+      mountedRef.current = false
+      initializationRef.current = false
       stopScanner()
     }
     
     return () => {
-      console.log('🧹 Cleanup do useEffect isOpen')
+      console.log('🧹 Cleanup do useEffect principal')
+      mountedRef.current = false
+      initializationRef.current = false
       stopScanner()
     }
-  }, [isOpen])
-
-  useEffect(() => {
-    console.log('🔄 useEffect currentCamera executado:', { isOpen, isInitializing, error, currentCamera })
-    
-    if (isOpen && !isInitializing && !error) {
-      console.log('✅ Condições atendidas para trocar câmera...')
-      
-      // Aguardar o elemento de vídeo estar disponível antes de trocar câmera
-      const switchCameraWithDelay = () => {
-        if (videoRef.current) {
-          console.log('📹 Elemento de vídeo disponível, trocando câmera')
-          startScanner()
-        } else {
-          console.log('⏳ Aguardando elemento de vídeo para trocar câmera...')
-          setTimeout(switchCameraWithDelay, 100)
-        }
-      }
-      
-      // Aguardar um pouco antes de trocar a câmera
-      setTimeout(switchCameraWithDelay, 200)
-    } else {
-      console.log('⏸️ Condições não atendidas para trocar câmera:', { isOpen, isInitializing, error })
-    }
-  }, [currentCamera])
+  }, [isOpen, currentCamera]) // Combinar ambos os efeitos em um só
 
   // Cleanup ao desmontar
   useEffect(() => {
@@ -499,9 +526,17 @@ export default function ZXingBarcodeScanner({ isOpen, onClose, onScan }: ZXingBa
               <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
               <p className="text-red-600 mb-4">{error}</p>
               <div className="space-y-2">
-                <Button onClick={startScanner} className="w-full">
-                  <RotateCcw className="w-4 h-4 mr-2" />
-                  Tentar Novamente
+                <Button 
+                  onClick={startScanner} 
+                  disabled={isInitializing}
+                  className="w-full"
+                >
+                  {isInitializing ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                  )}
+                  {isInitializing ? 'Iniciando...' : 'Tentar Novamente'}
                 </Button>
                 <Button 
                   variant="outline" 
@@ -554,10 +589,11 @@ export default function ZXingBarcodeScanner({ isOpen, onClose, onScan }: ZXingBa
               <div className="flex gap-2">
                 {availableCameras.length > 1 && (
                   <Button
-                    variant="outline"
-                    onClick={switchCamera}
-                    className="flex-1"
-                  >
+                  variant="outline"
+                  onClick={switchCamera}
+                  disabled={availableCameras.length <= 1 || isInitializing}
+                  className="flex-1"
+                >
                     <FlipHorizontal className="w-4 h-4 mr-2" />
                     {currentCamera === 'environment' ? 'Traseira' : 'Frontal'}
                   </Button>

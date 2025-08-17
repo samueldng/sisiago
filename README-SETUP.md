@@ -5,7 +5,7 @@
 - ✅ Cliente Supabase funcionando
 - ✅ Dados de exemplo inseridos
 - ⚠️ RLS precisa ser configurado
-- ❌ Prisma com problemas (usar Supabase client)
+- ✅ Cliente Supabase configurado e funcionando
 
 ## 🔧 Configuração Necessária
 
@@ -64,11 +64,9 @@ const { data: product } = await db.products.create({
 })
 ```
 
-### Substituir Prisma por Supabase:
-Em vez de:
+### Usar cliente Supabase:
 ```typescript
-import { prisma } from '@/lib/prisma'
-const categories = await prisma.category.findMany()
+// Cliente Supabase já configurado
 ```
 
 Use:

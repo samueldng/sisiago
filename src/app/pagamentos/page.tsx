@@ -40,54 +40,19 @@ export default function PaymentsPage() {
   const loadPayments = async () => {
     try {
       setLoading(true)
-      // TODO: Implementar chamada para API
-      // const response = await fetch(`/api/payments?date=${dateFilter}`)
-      // const data = await response.json()
-      // setPayments(data)
+      const response = await fetch(`/api/payments?date=${dateFilter}`)
       
-      // Dados mockados para demonstração
-      const mockPayments: Payment[] = [
-        {
-          id: '1',
-          amount: 25.50,
-          method: PaymentMethod.PIX,
-          status: PaymentStatus.PAID,
-          transactionId: 'PIX123456789',
-          paidAt: new Date(Date.now() - 1000 * 60 * 15),
-          saleId: '1',
-          createdAt: new Date(Date.now() - 1000 * 60 * 30),
-          updatedAt: new Date(Date.now() - 1000 * 60 * 15)
-        },
-        {
-          id: '2',
-          amount: 13.70,
-          method: PaymentMethod.CASH,
-          status: PaymentStatus.PAID,
-          paidAt: new Date(Date.now() - 1000 * 60 * 60 * 2),
-          saleId: '2',
-          createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2),
-          updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 2)
-        },
-        {
-          id: '3',
-          amount: 22.90,
-          method: PaymentMethod.PIX,
-          status: PaymentStatus.PENDING,
-          saleId: '3',
-          createdAt: new Date(Date.now() - 1000 * 60 * 10),
-          updatedAt: new Date(Date.now() - 1000 * 60 * 10)
-        },
-        {
-          id: '4',
-          amount: 45.80,
-          method: PaymentMethod.PIX,
-          status: PaymentStatus.EXPIRED,
-          saleId: '4',
-          createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24),
-          updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 24)
-        }
-      ]
-      setPayments(mockPayments)
+      if (!response.ok) {
+        throw new Error('Erro ao carregar pagamentos')
+      }
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        setPayments(data.data.payments || [])
+      } else {
+        throw new Error(data.error || 'Erro ao carregar pagamentos')
+      }
     } catch (error) {
       console.error('Erro ao carregar pagamentos:', error)
     } finally {

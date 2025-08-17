@@ -40,6 +40,7 @@ export interface User {
   name?: string
   password: string
   role: string
+  is_active: boolean
   created_at: string
   updated_at: string
 }
@@ -173,5 +174,119 @@ export const db = {
     update: (id: string, data: Partial<Omit<Payment, 'id' | 'created_at' | 'updated_at'>>) => 
       supabase.from('payments').update(data).eq('id', id).select().single(),
     delete: (id: string) => supabase.from('payments').delete().eq('id', id)
+  },
+
+  // Usuários
+  users: {
+    findMany: () => supabase.from('users').select('*'),
+    findById: (id: string) => supabase.from('users').select('*').eq('id', id).single(),
+    findByEmail: (email: string) => supabase.from('users').select('*').eq('email', email).single(),
+    create: (data: Omit<User, 'id' | 'created_at' | 'updated_at'>) => 
+      supabase.from('users').insert(data).select().single(),
+    update: (id: string, data: Partial<Omit<User, 'id' | 'created_at' | 'updated_at'>>) => 
+      supabase.from('users').update(data).eq('id', id).select().single(),
+    delete: (id: string) => supabase.from('users').delete().eq('id', id)
+  },
+
+  // Logs de auditoria
+  auditLogs: {
+    findMany: (filters?: {
+      table_name?: string;
+      user_id?: string;
+      operation?: string;
+      limit?: number;
+      offset?: number;
+    }) => {
+      let query = supabase
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (filters?.table_name) {
+        query = query.eq('table_name', filters.table_name);
+      }
+      if (filters?.user_id) {
+        query = query.eq('user_id', filters.user_id);
+      }
+      if (filters?.operation) {
+        query = query.eq('operation', filters.operation);
+      }
+      if (filters?.limit) {
+        query = query.limit(filters.limit);
+      }
+      if (filters?.offset) {
+        query = query.range(filters.offset, (filters.offset + (filters.limit || 50)) - 1);
+      }
+
+      return query;
+    },
+    findById: (id: string) => supabase.from('audit_logs').select('*').eq('id', id).single(),
+    create: (data: Omit<AuditLog, 'id' | 'created_at'>) => 
+      supabase.from('audit_logs').insert(data).select().single(),
+    findByRecordId: (recordId: string, tableName?: string) => {
+      let query = supabase
+        .from('audit_logs')
+        .select('*')
+        .eq('record_id', recordId)
+        .order('created_at', { ascending: false });
+
+      if (tableName) {
+        query = query.eq('table_name', tableName);
+      }
+
+      return query;
+    }
   }
 }
+
+// Interface para logs de auditoria
+export interface AuditLog {
+  id: string;
+  table_name: string;
+  operation: 'INSERT' | 'UPDATE' | 'DELETE';
+  record_id: string;
+  old_values?: Record<string, any>;
+  new_values?: Record<string, any>;
+  user_id: string;
+  user_email: string;
+  timestamp: string;
+  ip_address?: string;
+  user_agent?: string;
+  created_at: string;
+}
+
+// Função helper para criar logs de auditoria
+export const createAuditLog = async ({
+  tableName,
+  operation,
+  recordId,
+  oldValues,
+  newValues,
+  userId,
+  userEmail,
+  ipAddress,
+  userAgent
+}: {
+  tableName: string;
+  operation: 'INSERT' | 'UPDATE' | 'DELETE';
+  recordId: string;
+  oldValues?: Record<string, any>;
+  newValues?: Record<string, any>;
+  userId: string;
+  userEmail: string;
+  ipAddress?: string;
+  userAgent?: string;
+}) => {
+  return await db.auditLogs.create({
+    table_name: tableName,
+    operation,
+    record_id: recordId,
+    old_values: oldValues,
+    new_values: newValues,
+    user_id: userId,
+    user_email: userEmail,
+    timestamp: new Date().toISOString(),
+    ip_address: ipAddress,
+    user_agent: userAgent
+  });
+};

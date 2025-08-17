@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { z } from 'zod'
 
+// Forçar renderização dinâmica
+export const dynamic = 'force-dynamic'
+
 // Schema de validação para parâmetros de relatório
 const reportParamsSchema = z.object({
   tipo: z.enum(['vendas', 'produtos', 'financeiro', 'clientes'], {
@@ -18,7 +21,7 @@ const reportParamsSchema = z.object({
 // GET /api/relatorios - Gerar relatórios
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
+    const searchParams = request.nextUrl.searchParams
     const params = {
       tipo: searchParams.get('tipo'),
       data_inicio: searchParams.get('data_inicio'),

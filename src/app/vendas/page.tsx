@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -25,60 +25,72 @@ import { formatCurrency, formatDateTime, translatePaymentMethod, translateSaleSt
 import { Sale, SaleStatus, PaymentMethod } from '@/types'
 
 export default function SalesPage() {
+  console.log('🎯 COMPONENTE SALESPAGE RENDERIZADO!')
   const [sales, setSales] = useState<Sale[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedStatus, setSelectedStatus] = useState<string>('')
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
-  const [dateFilter, setDateFilter] = useState<string>('today')
+  const [dateFilter, setDateFilter] = useState<string>('all')
   const [loading, setLoading] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
 
   useEffect(() => {
-    loadSales()
-  }, [dateFilter])
-
-  const loadSales = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch(`/api/sales?date=${dateFilter}`)
-      if (!response.ok) {
-        throw new Error('Erro ao carregar vendas')
+    async function fetchSales() {
+      try {
+        setLoading(true)
+        console.log('🚀 Fazendo requisição para API com dateFilter:', dateFilter)
+         const response = await fetch(`/api/sales?date=${dateFilter}`)
+         const data = await response.json()
+         console.log('📡 Resposta da API recebida:', data)
+         
+         if (data.success && data.sales) {
+           console.log('✅ Dados válidos recebidos, mapeando vendas...')
+           console.log('📊 Vendas brutas da API:', data.sales)
+           
+           const mappedSales: Sale[] = data.sales.map((sale: any) => {
+             console.log('🔄 Mapeando venda:', sale.id)
+             return {
+               id: sale.id,
+               total: sale.total,
+               discount: sale.discount || 0,
+               finalTotal: sale.final_total || sale.total,
+               paymentMethod: sale.payment_method || PaymentMethod.CASH,
+               status: sale.status || SaleStatus.PENDING,
+               notes: sale.notes || '',
+               userId: sale.user_id || '',
+               user: sale.users || undefined,
+               items: sale.sale_items?.map((item: any) => ({
+                 id: item.id,
+                 quantity: item.quantity,
+                 unitPrice: item.unit_price,
+                 total: item.quantity * item.unit_price,
+                 saleId: item.sale_id,
+                 productId: item.product_id,
+                 product: item.products,
+                 createdAt: new Date(item.created_at)
+               })) || [],
+               payment: sale.payments?.[0] || undefined,
+               createdAt: new Date(sale.created_at),
+               updatedAt: new Date(sale.updated_at || sale.created_at)
+             }
+           })
+           
+           console.log('🎯 Vendas mapeadas:', mappedSales)
+           console.log('💾 Chamando setSales...')
+           setSales(mappedSales)
+           console.log('✅ setSales executado!')
+         } else {
+           console.log('❌ Dados inválidos ou sem vendas:', data)
+         }
+      } catch (error) {
+        console.error('Erro ao carregar vendas:', error)
+      } finally {
+        setLoading(false)
       }
-      const data = await response.json()
-      
-      // Mapear dados do Supabase para o formato esperado pelo frontend
-      const mappedSales = (data.sales || []).map((sale: any) => ({
-        id: sale.id,
-        total: sale.total,
-        discount: sale.discount || 0,
-        finalTotal: sale.final_total || sale.total,
-        paymentMethod: sale.payment_method,
-        status: sale.status,
-        notes: sale.notes,
-        userId: sale.user_id,
-        user: sale.users,
-        items: (sale.sale_items || []).map((item: any) => ({
-          id: item.id,
-          quantity: item.quantity,
-          unitPrice: item.unit_price,
-          total: item.total,
-          saleId: item.sale_id,
-          productId: item.product_id,
-          product: item.products,
-          createdAt: item.created_at
-        })),
-        payment: sale.payments?.[0],
-        createdAt: sale.created_at,
-        updatedAt: sale.updated_at
-      }))
-      
-      setSales(mappedSales)
-    } catch (error) {
-      console.error('Erro ao carregar vendas:', error)
-    } finally {
-      setLoading(false)
     }
-  }
+    
+    fetchSales()
+  }, [dateFilter])
 
   // Filtrar vendas
   const filteredSales = sales.filter(sale => {
@@ -92,6 +104,19 @@ export default function SalesPage() {
     
     return matchesSearch && matchesStatus && matchesPaymentMethod
   })
+
+  // Debug do estado das vendas
+  useEffect(() => {
+    console.log('📊 Debug vendas (estado atualizado):', {
+      totalSales: sales.length,
+      filteredSales: filteredSales.length,
+      searchTerm,
+      selectedStatus,
+      selectedPaymentMethod,
+      dateFilter,
+      salesData: sales
+    })
+  }, [sales, filteredSales, searchTerm, selectedStatus, selectedPaymentMethod, dateFilter])
 
   // Calcular estatísticas
   const totalSales = filteredSales.length

@@ -36,16 +36,18 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([])
   const [selectedCameraId, setSelectedCameraId] = useState<string>('')
   const [scanCount, setScanCount] = useState(0)
-  const [lastScannedCode, setLastScannedCode] = useState<string | null>(null)
+  const [lastScannedCode, setLastScannedCode] = useState<string>('')
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isInCooldown, setIsInCooldown] = useState(false)
+  const [isInitializing, setIsInitializing] = useState(false)
   
   const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const scanIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const lastScanTimeRef = useRef<number>(0)
   const cooldownTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const codeReaderRef = useRef<any>(null)
+  const initializationRef = useRef<boolean>(false)
+  const mountedRef = useRef<boolean>(false)
 
   // Função para adicionar log
   const addLog = useCallback((type: ScanLog['type'], message: string, details?: any) => {
@@ -57,7 +59,11 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
     }
     
     setLogs(prev => [...prev.slice(-19), log])
-    console.log(`[ZXingScanner ${type.toUpperCase()}]`, message, details)
+    
+    // Log apenas erros e sucessos importantes no console
+    if (type === 'error' || (type === 'success' && message.includes('Código válido'))) {
+      console.log(`[ZXingScanner ${type.toUpperCase()}]`, message, details)
+    }
   }, [])
 
   // Validação EAN-13
@@ -105,7 +111,7 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
     if (!result || isInCooldown) return
     
     const code = result.getText()
-    addLog('info', `Código detectado pelo ZXing: ${code}`)
+    // Remover log excessivo: addLog('info', `Código detectado pelo ZXing: ${code}`)
     
     if (isValidBarcode(code)) {
       const now = Date.now()
@@ -115,7 +121,7 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
         return
       }
       
-      addLog('success', `Código válido confirmado: ${code}`)
+      addLog('success', `Código válido: ${code}`)
       setLastScannedCode(code)
       lastScanTimeRef.current = now
       setScanCount(prev => prev + 1)
@@ -142,7 +148,7 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
         oscillator.start(audioContext.currentTime)
         oscillator.stop(audioContext.currentTime + 0.2)
       } catch (audioError) {
-        addLog('warning', 'Não foi possível reproduzir som')
+        // Remover log de erro de áudio
       }
       
       // Chamar callback
@@ -156,6 +162,112 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
       addLog('warning', `Código inválido: ${code}`)
     }
   }, [addLog, isValidBarcode, lastScannedCode, onClose, onScan, isInCooldown])
+
+  // Verificar suporte e permissões
+  const checkCameraSupport = useCallback(async () => {
+    try {
+      addLog('info', 'Verificando suporte à câmera...')
+      
+      // Log detalhado do ambiente
+      addLog('info', `Navegador: ${navigator.userAgent}`)
+      addLog('info', `Protocolo: ${location.protocol}`)
+      addLog('info', `Hostname: ${location.hostname}`)
+      addLog('info', `isSecureContext: ${window.isSecureContext}`)
+      
+      // Verificar se MediaDevices é suportado
+      if (!navigator.mediaDevices) {
+        throw new Error('navigator.mediaDevices não está disponível')
+      }
+      
+      if (!navigator.mediaDevices.getUserMedia) {
+        throw new Error('getUserMedia não está disponível')
+      }
+      
+      // Verificar se está em contexto seguro (HTTPS ou localhost)
+      const isSecureContext = window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+      
+      addLog('info', `Contexto seguro: ${isSecureContext}`)
+      
+      if (!isSecureContext) {
+        throw new Error(`Acesso à câmera requer contexto seguro (HTTPS ou localhost). Atual: ${location.protocol}//${location.hostname}`)
+      }
+      
+      addLog('success', 'Suporte à câmera confirmado')
+      return true
+    } catch (error) {
+      addLog('error', `Erro de suporte: ${error}`)
+      setError(`Erro de suporte: ${error}`)
+      return false
+    }
+  }, [addLog])
+
+  // Solicitar permissão básica
+  const requestBasicPermission = useCallback(async () => {
+    try {
+      addLog('info', 'Solicitando permissão básica da câmera...')
+      
+      // Tentar diferentes estratégias de constraints
+      const strategies = [
+        // Estratégia 1: Câmera traseira preferencial
+        { video: { facingMode: 'environment' }, audio: false },
+        // Estratégia 2: Qualquer câmera
+        { video: true, audio: false },
+        // Estratégia 3: Constraints mínimas
+        { video: { width: 640, height: 480 }, audio: false }
+      ]
+      
+      let stream = null
+      let lastError = null
+      
+      for (let i = 0; i < strategies.length; i++) {
+        try {
+          addLog('info', `Tentativa ${i + 1}: ${JSON.stringify(strategies[i])}`)
+          stream = await navigator.mediaDevices.getUserMedia(strategies[i])
+          addLog('success', `Sucesso na tentativa ${i + 1}`)
+          break
+        } catch (err) {
+          lastError = err
+          addLog('warning', `Tentativa ${i + 1} falhou: ${err}`)
+        }
+      }
+      
+      if (!stream) {
+        throw lastError || new Error('Todas as tentativas de acesso à câmera falharam')
+      }
+      
+      // Log das tracks obtidas
+      const videoTracks = stream.getVideoTracks()
+      addLog('info', `Tracks de vídeo obtidas: ${videoTracks.length}`)
+      videoTracks.forEach((track, index) => {
+        addLog('info', `Track ${index}: ${track.label} (${track.kind})`)
+      })
+      
+      // Parar imediatamente - só queríamos a permissão
+      stream.getTracks().forEach(track => track.stop())
+      
+      addLog('success', 'Permissão da câmera concedida')
+      return true
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      const errorName = error instanceof Error ? error.name : 'UnknownError'
+      
+      addLog('error', `Erro de permissão: ${errorName} - ${errorMessage}`, error)
+      
+      if (errorName === 'NotAllowedError' || errorMessage.includes('Permission denied')) {
+        setError('Permissão da câmera negada. Por favor, permita o acesso à câmera nas configurações do navegador e recarregue a página.')
+      } else if (errorName === 'NotFoundError') {
+        setError('Nenhuma câmera encontrada no dispositivo.')
+      } else if (errorName === 'NotReadableError') {
+        setError('Câmera está sendo usada por outro aplicativo.')
+      } else if (errorName === 'OverconstrainedError') {
+        setError('Configurações de câmera não suportadas pelo dispositivo.')
+      } else {
+        setError(`Erro ao acessar câmera: ${errorName} - ${errorMessage}`)
+      }
+      
+      return false
+    }
+  }, [addLog])
 
   // Enumerar câmeras
   const enumerateCameras = useCallback(async () => {
@@ -183,20 +295,34 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
         addLog('info', `Primeira câmera selecionada: ${videoDevices[0].label}`)
       }
       
+      return true
     } catch (error) {
       addLog('error', `Erro ao enumerar câmeras: ${error}`)
+      return false
     }
   }, [addLog])
 
   // Inicializar scanner
   const initializeScanner = useCallback(async () => {
+    // Evitar múltiplas inicializações
+    if (initializationRef.current || !mountedRef.current) {
+      addLog('warning', 'Scanner já está inicializando ou desmontado, ignorando...')
+      return Promise.resolve()
+    }
+    
     try {
+      initializationRef.current = true
+      setIsInitializing(true)
       addLog('info', 'Inicializando scanner ZXing...')
       setError(null)
       
       if (!codeReaderRef.current) {
         const success = await initializeZXing()
-        if (!success) return
+        if (!success) {
+          initializationRef.current = false
+          setIsInitializing(false)
+          return Promise.reject(new Error('Falha ao inicializar ZXing'))
+        }
       }
       
       // Parar stream atual
@@ -222,7 +348,14 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
       
       if (!videoRef.current) {
         addLog('error', 'Elemento de vídeo não encontrado')
-        return
+        initializationRef.current = false
+        setIsInitializing(false)
+        return Promise.reject(new Error('Elemento de vídeo não encontrado'))
+      }
+      
+      // Limpar srcObject anterior se existir
+      if (videoRef.current.srcObject) {
+        videoRef.current.srcObject = null
       }
       
       videoRef.current.srcObject = stream
@@ -247,58 +380,79 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
         video.addEventListener('loadedmetadata', onLoadedMetadata)
         video.addEventListener('error', onError)
         
-        video.play().catch(reject)
+        // Aguardar um pouco antes de tentar reproduzir
+        setTimeout(() => {
+          video.play().catch(reject)
+        }, 100)
       })
       
       addLog('success', 'Câmera inicializada com sucesso')
       setIsScanning(true)
       
-      // Iniciar detecção ZXing
-      scanIntervalRef.current = setInterval(async () => {
-        if (!videoRef.current || !canvasRef.current || !codeReaderRef.current || isInCooldown) {
+      // Iniciar detecção contínua com ZXing imediatamente
+      const scanContinuously = () => {
+        // Verificar se ainda estamos montados e com elementos válidos
+        if (!mountedRef.current || !videoRef.current || !codeReaderRef.current || isInCooldown) {
           return
         }
         
-        try {
-          setIsAnalyzing(true)
-          
-          const video = videoRef.current
-          const canvas = canvasRef.current
-          const ctx = canvas.getContext('2d')
-          
-          if (!ctx || video.readyState !== video.HAVE_ENOUGH_DATA) {
-            return
-          }
-          
-          // Capturar frame
-          canvas.width = video.videoWidth
-          canvas.height = video.videoHeight
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-          
-          // Usar ZXing para detectar
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-          const result = await codeReaderRef.current.decodeFromImageData(imageData)
-          
-          if (result) {
-            handleScanResult(result)
-          }
-          
-        } catch (error) {
-          // ZXing lança erro quando não encontra código, isso é normal
-          // Só logamos erros reais
-          const errorMessage = error instanceof Error ? error.message : String(error)
-          if (!errorMessage.includes('NotFoundException')) {       
-            addLog('error', `Erro na detecção: ${errorMessage}`)
-          }
-        } finally {
-          setIsAnalyzing(false)
+        setIsAnalyzing(true)
+        
+        // Garantir que o elemento de vídeo tem um ID
+        if (!videoRef.current.id) {
+          videoRef.current.id = 'zxing-reliable-video-' + Date.now()
         }
-      }, 500) // 2 FPS para melhor performance
+        
+        codeReaderRef.current.decodeOnceFromVideoDevice(undefined, videoRef.current.id)
+          .then((result) => {
+            if (mountedRef.current) {
+              addLog('success', `Código detectado: ${result.getText()}`)
+              handleScanResult(result)
+            }
+          })
+          .catch((error) => {
+            if (!mountedRef.current) return
+            
+            // ZXing lança NotFoundException quando não encontra código, isso é normal
+            const errorMessage = error instanceof Error ? error.message : String(error)
+            if (!errorMessage.includes('NotFoundException')) {
+              addLog('warning', `Erro na detecção: ${errorMessage}`)
+            }
+          })
+          .finally(() => {
+            if (mountedRef.current) {
+              setIsAnalyzing(false)
+              
+              // Continuar o loop de scan se ainda estamos montados e não em cooldown
+              if (!isInCooldown) {
+                setTimeout(scanContinuously, 100)
+              }
+            }
+          })
+      }
+      
+      // Iniciar o scan imediatamente após a câmera estar pronta
+      setTimeout(scanContinuously, 100)
+      
+      addLog('success', 'Scanner inicializado com sucesso')
+      initializationRef.current = false
+      setIsInitializing(false)
+      return Promise.resolve()
       
     } catch (error) {
+      initializationRef.current = false
+      setIsInitializing(false)
+      
+      // Tratamento específico para AbortError
+      if (error instanceof Error && error.name === 'AbortError') {
+        addLog('warning', 'Reprodução de vídeo foi interrompida - tentando novamente...')
+        return Promise.resolve() // Não rejeitar para AbortError
+      }
+      
       const errorMessage = `Erro ao inicializar scanner: ${error}`
       addLog('error', errorMessage)
       setError(errorMessage)
+      return Promise.reject(error)
     }
   }, [addLog, currentStream, selectedCameraId, initializeZXing, handleScanResult, isInCooldown])
 
@@ -306,6 +460,8 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
   const stopScanner = useCallback(() => {
     addLog('info', 'Parando scanner...')
     
+    initializationRef.current = false
+    setIsInitializing(false)
     setIsScanning(false)
     
     if (scanIntervalRef.current) {
@@ -340,16 +496,20 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
 
   // Reiniciar scanner
   const restartScanner = useCallback(() => {
+    if (initializationRef.current) return
+    
     addLog('info', 'Reiniciando scanner...')
     stopScanner()
     setTimeout(() => {
-      initializeScanner()
+      if (mountedRef.current && !initializationRef.current) {
+        initializeScanner()
+      }
     }, 1000)
   }, [addLog, initializeScanner, stopScanner])
 
   // Alternar câmera
   const switchCamera = useCallback(() => {
-    if (cameras.length <= 1) return
+    if (cameras.length <= 1 || initializationRef.current) return
     
     const currentIndex = cameras.findIndex(camera => camera.deviceId === selectedCameraId)
     const nextIndex = (currentIndex + 1) % cameras.length
@@ -359,19 +519,55 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
     setSelectedCameraId(nextCamera.deviceId)
     
     setTimeout(() => {
-      initializeScanner()
+      if (mountedRef.current && !initializationRef.current) {
+        initializeScanner()
+      }
     }, 500)
   }, [addLog, cameras, initializeScanner, selectedCameraId])
 
+  // Efeito de montagem
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
   // Efeito principal
   useEffect(() => {
-    if (isOpen && !isScanning) {
-      addLog('info', 'Scanner aberto, iniciando...')
-      enumerateCameras().then(() => {
-        setTimeout(() => {
-          initializeScanner()
-        }, 500)
-      })
+    if (isOpen && !isScanning && !initializationRef.current) {
+      addLog('info', 'Scanner aberto, iniciando diagnóstico...')
+      
+      const initializeWithDiagnostic = async () => {
+        try {
+          // Passo 1: Verificar suporte
+          const hasSupport = await checkCameraSupport()
+          if (!hasSupport || !mountedRef.current) return
+          
+          // Passo 2: Solicitar permissão básica
+          const hasPermission = await requestBasicPermission()
+          if (!hasPermission || !mountedRef.current) return
+          
+          // Passo 3: Enumerar câmeras
+          const camerasFound = await enumerateCameras()
+          if (!camerasFound || !mountedRef.current) return
+          
+          // Passo 4: Inicializar scanner
+          setTimeout(() => {
+            if (mountedRef.current && !initializationRef.current) {
+              initializeScanner()
+            }
+          }, 500)
+          
+        } catch (error) {
+          if (mountedRef.current) {
+            addLog('error', `Erro na inicialização: ${error}`)
+            setError(`Erro na inicialização: ${error}`)
+          }
+        }
+      }
+      
+      initializeWithDiagnostic()
     } else if (!isOpen && isScanning) {
       stopScanner()
     }
@@ -425,6 +621,36 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
         </CardHeader>
         
         <CardContent className="space-y-4">
+          {/* Alerta de Erro */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <AlertCircle className="w-5 h-5 text-red-500 mt-0.5" />
+                <div className="flex-1">
+                  <h3 className="font-medium text-red-800 mb-1">Erro no Scanner</h3>
+                  <p className="text-red-700 text-sm mb-3">{error}</p>
+                  
+                  {error.includes('Permissão da câmera negada') && (
+                    <div className="text-red-600 text-xs space-y-1">
+                      <p><strong>Como resolver:</strong></p>
+                      <p>1. Clique no ícone de câmera na barra de endereços</p>
+                      <p>2. Selecione "Permitir" para acesso à câmera</p>
+                      <p>3. Clique em "Diagnosticar" abaixo para tentar novamente</p>
+                    </div>
+                  )}
+                  
+                  {error.includes('contexto seguro') && (
+                    <div className="text-red-600 text-xs space-y-1">
+                      <p><strong>Como resolver:</strong></p>
+                      <p>• Acesse via HTTPS ou localhost</p>
+                      <p>• Verifique se a URL está correta</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Preview da Câmera */}
             <div className="space-y-4">
@@ -437,14 +663,16 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
                   muted
                 />
                 
-                <canvas 
-                  ref={canvasRef}
-                  className="hidden"
-                />
-                
                 {/* Status overlay */}
                 <div className="absolute top-2 left-2 space-y-1">
-                  {isScanning && (
+                  {isInitializing && (
+                    <Badge className="bg-orange-100 text-orange-800">
+                      <Settings className="w-3 h-3 mr-1 animate-spin" />
+                      Inicializando
+                    </Badge>
+                  )}
+                  
+                  {isScanning && !isInitializing && (
                     <Badge className="bg-green-100 text-green-800">
                       <Eye className="w-3 h-3 mr-1" />
                       Escaneando
@@ -486,20 +714,45 @@ export default function ZXingReliableScanner({ isOpen, onClose, onScan }: ZXingR
                   onClick={restartScanner}
                   variant="outline"
                   size="sm"
-                  disabled={!isScanning}
+                  disabled={!isScanning || isInitializing}
                 >
                   <RotateCcw className="w-4 h-4 mr-2" />
-                  Reiniciar
+                  {isInitializing ? 'Iniciando...' : 'Reiniciar'}
                 </Button>
                 
                 <Button
                   onClick={switchCamera}
                   variant="outline"
                   size="sm"
-                  disabled={cameras.length <= 1}
+                  disabled={cameras.length <= 1 || isInitializing}
                 >
                   <Camera className="w-4 h-4 mr-2" />
                   Alternar Câmera
+                </Button>
+                
+                <Button
+                  onClick={async () => {
+                    setError(null)
+                    setLogs([])
+                    addLog('info', 'Iniciando diagnóstico manual...')
+                    
+                    const hasSupport = await checkCameraSupport()
+                    if (!hasSupport) return
+                    
+                    const hasPermission = await requestBasicPermission()
+                    if (!hasPermission) return
+                    
+                    const camerasFound = await enumerateCameras()
+                    if (!camerasFound) return
+                    
+                    addLog('success', 'Diagnóstico concluído com sucesso!')
+                  }}
+                  variant="outline"
+                  size="sm"
+                  className="bg-blue-50 hover:bg-blue-100 text-blue-700"
+                >
+                  <Settings className="w-4 h-4 mr-2" />
+                  Diagnosticar
                 </Button>
                 
                 <Button

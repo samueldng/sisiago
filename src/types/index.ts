@@ -33,6 +33,8 @@ export interface Product {
   unit: ProductUnit;
   description?: string;
   isActive: boolean;
+  isPerishable: boolean;
+  expiryDate?: Date;
   categoryId: string;
   category?: Category;
   createdAt: Date;
@@ -146,6 +148,8 @@ export interface ProductFormData {
   stock: number;
   unit: ProductUnit;
   description?: string;
+  isPerishable: boolean;
+  expiryDate?: Date;
   categoryId: string;
 }
 

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { z } from 'zod'
+import { triggerDashboardUpdateServer } from '@/utils/dashboardUpdater'
+import { createAuditLog } from '@/lib/supabase'
 
 // Schema de validação para criação de venda
 const createSaleSchema = z.object({
@@ -19,34 +21,14 @@ const createSaleSchema = z.object({
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
+    const dateFilter = searchParams.get('date') || 'all'
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const status = searchParams.get('status')
     const paymentMethod = searchParams.get('paymentMethod')
     const userId = searchParams.get('userId')
     const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '10')
-    
-    const where: any = {}
-    
-    if (startDate && endDate) {
-      where.createdAt = {
-        gte: new Date(startDate),
-        lte: new Date(endDate)
-      }
-    }
-    
-    if (status) {
-      where.status = status
-    }
-    
-    if (paymentMethod) {
-      where.paymentMethod = paymentMethod
-    }
-    
-    if (userId) {
-      where.userId = userId
-    }
+    const limit = parseInt(searchParams.get('limit') || '100')
     
     let query = supabase
       .from('sales')
@@ -54,7 +36,31 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
       .range((page - 1) * limit, page * limit - 1)
     
-    // Aplicar filtros
+    // Aplicar filtro de data baseado no parâmetro 'date'
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    
+    switch (dateFilter) {
+      case 'today':
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        query = query.gte('created_at', today.toISOString()).lt('created_at', tomorrow.toISOString())
+        break
+      case 'week':
+        const weekStart = new Date(today)
+        weekStart.setDate(today.getDate() - today.getDay())
+        query = query.gte('created_at', weekStart.toISOString())
+        break
+      case 'month':
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+        query = query.gte('created_at', monthStart.toISOString())
+        break
+      case 'all':
+        // Não aplicar filtro de data
+        break
+    }
+    
+    // Aplicar outros filtros
     if (startDate && endDate) {
       query = query.gte('created_at', startDate).lte('created_at', endDate)
     }
@@ -72,6 +78,14 @@ export async function GET(request: NextRequest) {
     }
     
     const { data: sales, error, count } = await query
+    
+    console.log('🔍 API Sales Debug:', {
+      dateFilter,
+      today: today.toISOString(),
+      salesCount: sales?.length || 0,
+      totalCount: count,
+      error: error?.message
+    })
     
     if (error) {
       throw error
@@ -198,7 +212,7 @@ export async function POST(request: NextRequest) {
         discount: validatedData.discount,
         final_total: finalTotal,
         payment_method: validatedData.paymentMethod,
-        status: 'COMPLETED', // Marcar como concluída diretamente
+        status: 'PAID', // Marcar como paga diretamente
         notes: validatedData.notes || '',
         user_id: userId,
         created_at: new Date().toISOString()
@@ -261,12 +275,45 @@ export async function POST(request: NextRequest) {
       console.error('Erro ao buscar itens da venda:', itemsFetchError)
     }
     
+    // Criar log de auditoria
+    try {
+      const userAgent = request.headers.get('user-agent') || undefined
+      const forwardedFor = request.headers.get('x-forwarded-for')
+      const realIp = request.headers.get('x-real-ip')
+      const ipAddress = forwardedFor?.split(',')[0] || realIp || undefined
+      
+      await createAuditLog({
+        table_name: 'sales',
+        operation: 'INSERT',
+        record_id: newSale.id,
+        new_values: {
+          total: newSale.total,
+          discount: newSale.discount,
+          final_total: newSale.final_total,
+          payment_method: newSale.payment_method,
+          status: newSale.status,
+          notes: newSale.notes,
+          items_count: validatedData.items.length
+        },
+        user_id: userId,
+        user_email: existingUser?.email || 'sistema@sisiago.com',
+        ip_address: ipAddress,
+        user_agent: userAgent
+      })
+    } catch (auditError) {
+      console.error('Erro ao criar log de auditoria:', auditError)
+      // Não falhar a operação por causa do log
+    }
+
+    // Disparar atualização do dashboard
+    await triggerDashboardUpdateServer()
+
     // Retornar venda com itens
     const saleResponse = {
       ...newSale,
       items: saleItems || []
     }
-    
+
     return NextResponse.json(
       { success: true, data: saleResponse, message: 'Venda criada com sucesso' },
       { status: 201 }

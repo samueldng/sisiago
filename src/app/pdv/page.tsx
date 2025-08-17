@@ -14,33 +14,131 @@ import {
   Banknote,
   Smartphone,
   Search,
-  ArrowLeft
+  ArrowLeft,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+  AlertCircle,
+  CheckCircle
 } from 'lucide-react'
-import { formatCurrency, debounce } from '@/utils'
+import { formatCurrency } from '@/utils'
 import { Product, CartItem, PaymentMethod } from '@/types'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
+import { toast } from 'react-hot-toast'
+import { usePDVStore } from '@/stores/pdvStore'
+import { useProducts, useProductSearch, useProductByBarcode, usePreloadProducts } from '@/hooks/useProducts'
+import NetworkMonitor, { useNetworkStatus } from '@/components/NetworkMonitor'
+import { useDbConnectivity } from '@/hooks/useDbConnectivity'
+import { ConnectivityStatus } from '@/components/ConnectivityStatus'
 import ZXingReliableScanner from '@/components/ZXingReliableScanner'
+import { triggerDashboardUpdate } from '@/hooks/useDashboardStats'
 
 function PDVPageContent() {
   const searchParams = useSearchParams()
-  const [cart, setCart] = useState<CartItem[]>([])
-  const [products, setProducts] = useState<Product[]>([])
-  const [searchTerm, setSearchTerm] = useState('')
-  const [isScanning, setIsScanning] = useState(false)
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | null>(null)
-  const [showPayment, setShowPayment] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [showScanner, setShowScanner] = useState(false)
-  const [scanningBarcode, setScanningBarcode] = useState<string | null>(null)
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const [searchResults, setSearchResults] = useState<Product[]>([])
-  const [pdvOpenTime, setPdvOpenTime] = useState<Date | null>(null)
+  const networkStatus = useNetworkStatus()
+  const { isConnected, status, forceReconnect, startAutoReconnect } = useDbConnectivity()
+  
+  // Estados do PDV Store
+  const {
+    cart,
+    searchTerm,
+    isScanning,
+    selectedPaymentMethod,
+    showPayment,
+    pdvOpenTime,
+    currentTime,
+    isOnline,
+    addToCart,
+    removeFromCart,
+    updateCartItemQuantity,
+    clearCart,
+    setSearchTerm,
+    setIsScanning,
+    setSelectedPaymentMethod,
+    setShowPayment,
+    initializePDV,
+    updateCurrentTime
+  } = usePDVStore()
 
-  // Inicializar data de abertura no cliente
+  // Estados locais
+  const [showScanner, setShowScanner] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [scannedBarcode, setScannedBarcode] = useState<string>('')
+
+  // Hooks de produtos
+  const { 
+    data: productsData, 
+    isLoading: productsLoading, 
+    error: productsError,
+    refetch: refetchProducts
+  } = useProducts({ 
+    is_active: true, 
+    limit: 100 
+  })
+
+  const {
+    data: searchResults = [],
+    isLoading: searchLoading
+  } = useProductSearch(searchTerm)
+
+  const {
+    data: scannedProduct,
+    isLoading: barcodeLoading,
+    error: barcodeError
+  } = useProductByBarcode(scannedBarcode)
+
+  const { mutate: preloadProducts } = usePreloadProducts()
+
+  // Inicializar PDV
   useEffect(() => {
-    setPdvOpenTime(new Date())
+    initializePDV()
+    
+    // Pré-carregar produtos em background
+    preloadProducts()
+    
+    // Atualizar relógio a cada segundo
+    const timer = setInterval(() => {
+      updateCurrentTime()
+    }, 1000)
+
+    return () => clearInterval(timer)
   }, [])
+
+  // Monitorar conectividade do banco de dados com debounce
+  useEffect(() => {
+    let disconnectionTimer: NodeJS.Timeout
+    let hasShownDisconnectionToast = false
+
+    if (!isConnected && isOnline) {
+      // Aguardar 10 segundos antes de mostrar a notificação
+      // Isso evita notificações para desconexões momentâneas
+      disconnectionTimer = setTimeout(() => {
+        if (!hasShownDisconnectionToast) {
+          toast.error('Conexão com banco de dados perdida. Tentando reconectar...')
+          hasShownDisconnectionToast = true
+        }
+      }, 10000) // 10 segundos de delay
+      
+      startAutoReconnect()
+    } else if (isConnected && isOnline) {
+      // Limpar timer se reconectou antes dos 10 segundos
+      if (disconnectionTimer) {
+        clearTimeout(disconnectionTimer)
+      }
+      
+      // Só mostrar toast de sucesso se já havia mostrado o de erro antes
+      if (hasShownDisconnectionToast) {
+        toast.success('Conectado ao banco de dados!')
+      }
+    }
+
+    return () => {
+      if (disconnectionTimer) {
+        clearTimeout(disconnectionTimer)
+      }
+    }
+  }, [isConnected, isOnline, startAutoReconnect])
 
   // Detectar parâmetro scanner=true na URL
   useEffect(() => {
@@ -49,6 +147,32 @@ function PDVPageContent() {
       setShowScanner(true)
     }
   }, [searchParams])
+
+  // Processar produto escaneado
+  useEffect(() => {
+    if (scannedProduct && scannedBarcode) {
+      addToCart(scannedProduct, 1)
+      setScannedBarcode('')
+      setShowScanner(false)
+      toast.success(`Produto "${scannedProduct.name}" adicionado ao carrinho!`)
+    }
+  }, [scannedProduct, scannedBarcode, addToCart])
+
+  // Tratar erro de código de barras
+  useEffect(() => {
+    if (barcodeError && scannedBarcode) {
+      toast.error(`Produto com código ${scannedBarcode} não encontrado`)
+      setScannedBarcode('')
+    }
+  }, [barcodeError, scannedBarcode])
+
+  // Controlar sugestões de busca
+  useEffect(() => {
+    const shouldShow = searchTerm.length >= 2 && searchResults.length > 0
+    if (showSuggestions !== shouldShow) {
+      setShowSuggestions(shouldShow)
+    }
+  }, [searchTerm, searchResults, showSuggestions])
 
   // Formatar data e hora
   const formatDateTime = (date: Date) => {
@@ -62,339 +186,303 @@ function PDVPageContent() {
     })
   }
 
-  // Carregar produtos
-  useEffect(() => {
-    loadProducts()
-  }, [])
-
-  const loadProducts = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch('/api/products?isActive=true')
-      if (!response.ok) {
-        throw new Error('Erro ao carregar produtos')
-      }
-      const data = await response.json()
-      setProducts(data.data || []) // Corrigido: usar 'data' em vez de 'products'
-    } catch (error) {
-      console.error('Erro ao carregar produtos:', error)
-    } finally {
-      setLoading(false)
+  // Lidar com código de barras escaneado
+  const handleBarcodeScanned = useCallback((barcode: string) => {
+    if (barcode && barcode !== scannedBarcode) {
+      console.log('📱 Código de barras escaneado:', barcode)
+      setScannedBarcode(barcode)
     }
-  }
-
-  // Busca de produtos com debounce
-  const debouncedSearch = useCallback(
-    debounce(async (term: string) => {
-      if (term.length >= 1) { // Reduzir para 1 caractere para códigos de barras
-        try {
-          const response = await fetch(`/api/products?search=${encodeURIComponent(term)}&isActive=true&limit=20`)
-          if (response.ok) {
-            const data = await response.json()
-            setSearchResults(data.data || []) // Corrigido: usar 'data' em vez de 'products'
-            setShowSuggestions(true)
-          } else {
-            console.error('Erro na resposta da API:', response.status)
-            setSearchResults([])
-            setShowSuggestions(false)
-          }
-        } catch (error) {
-          console.error('Erro na busca:', error)
-          setSearchResults([])
-          setShowSuggestions(false)
-        }
-      } else {
-        setSearchResults([])
-        setShowSuggestions(false)
-      }
-    }, 300),
-    []
-  )
-
-  useEffect(() => {
-    if (searchTerm) {
-      debouncedSearch(searchTerm)
-    } else {
-      setSearchResults([])
-      setShowSuggestions(false)
-    }
-  }, [searchTerm, debouncedSearch])
-
-  // Filtrar produtos localmente quando não há termo de busca ou termo muito curto
-  const filteredProducts = searchTerm.length < 2 ? 
-    products.filter(product =>
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.barcode?.includes(searchTerm) ||
-      product.description?.toLowerCase().includes(searchTerm.toLowerCase())
-    ).slice(0, 20) : // Limitar a 20 produtos para performance
-    []
+  }, [scannedBarcode])
 
   // Selecionar produto da sugestão
-  const selectProductFromSuggestion = (product: Product) => {
+  const selectProductFromSuggestion = useCallback((product: Product) => {
     addToCart(product, 1)
     setSearchTerm('')
     setShowSuggestions(false)
-    setSearchResults([])
-  }
-
-  // Adicionar produto ao carrinho
-  const addToCart = (product: Product, quantity: number = 1) => {
-    setCart(prevCart => {
-      const existingItem = prevCart.find(item => item.product.id === product.id)
-      
-      if (existingItem) {
-        return prevCart.map(item =>
-          item.product.id === product.id
-            ? { ...item, quantity: item.quantity + quantity, total: (item.quantity + quantity) * product.salePrice }
-            : item
-        )
-      } else {
-        return [...prevCart, {
-          product,
-          quantity,
-          total: quantity * product.salePrice
-        }]
-      }
-    })
-  }
-
-  // Remover produto do carrinho
-  const removeFromCart = (productId: string) => {
-    setCart(prevCart => prevCart.filter(item => item.product.id !== productId))
-  }
-
-  // Atualizar quantidade no carrinho
-  const updateQuantity = (productId: string, newQuantity: number) => {
-    if (newQuantity <= 0) {
-      removeFromCart(productId)
-      return
-    }
-    
-    setCart(prevCart =>
-      prevCart.map(item =>
-        item.product.id === productId
-          ? { ...item, quantity: newQuantity, total: newQuantity * item.product.salePrice }
-          : item
-      )
-    )
-  }
+    toast.success(`"${product.name}" adicionado ao carrinho!`)
+  }, [addToCart, setSearchTerm])
 
   // Calcular totais
   const subtotal = cart.reduce((sum, item) => sum + item.total, 0)
   const discount = 0 // TODO: Implementar sistema de desconto
   const total = subtotal - discount
 
-  // Limpar carrinho
-  const clearCart = () => {
-    setCart([])
-    setShowPayment(false)
-    setSelectedPaymentMethod(null)
-  }
-
-  const handleBarcodeScanned = async (barcode: string) => {
-    // Evitar múltiplas execuções simultâneas do mesmo código
-    if (scanningBarcode === barcode || loading) {
-      return
-    }
-    
-    try {
-      setScanningBarcode(barcode)
-      setLoading(true)
-      const response = await fetch(`/api/products/barcode/${barcode}`)
-      const data = await response.json()
-      
-      if (data.success) {
-        addToCart(data.data)
-      } else {
-        alert(`Produto com código ${barcode} não encontrado`)
-      }
-    } catch (error) {
-      console.error('Erro ao buscar produto:', error)
-      alert('Erro ao buscar produto')
-    } finally {
-      setLoading(false)
-      setScanningBarcode(null)
-    }
-  }
-
-  // Iniciar scanner
-  const startScanner = () => {
-    setShowScanner(true)
-  }
-
-  // Callback do scanner
-  const handleScanResult = (barcode: string) => {
-    handleBarcodeScanned(barcode)
-    setShowScanner(false)
-  }
-
-  // Fechar scanner
-  const closeScanner = () => {
-    setShowScanner(false)
-  }
-
   // Finalizar venda
   const finalizeSale = async () => {
-    if (!selectedPaymentMethod || cart.length === 0) return
-    
+    if (cart.length === 0) {
+      toast.error('Carrinho vazio!')
+      return
+    }
+
+    if (!selectedPaymentMethod) {
+      toast.error('Selecione um método de pagamento!')
+      return
+    }
+
     try {
-      setLoading(true)
-      
-      // Gerar UUID temporário para usuário (desenvolvimento)
-      const tempUserId = crypto.randomUUID()
-      
-      // Preparar dados da venda
       const saleData = {
         items: cart.map(item => ({
           productId: item.product.id,
           quantity: item.quantity,
           unitPrice: item.product.salePrice
         })),
-        discount: discount,
         paymentMethod: selectedPaymentMethod,
+        discount: discount,
         notes: '',
-        userId: tempUserId // Usar UUID temporário
+        userId: 'default-user' // Usuário padrão para desenvolvimento
       }
+
+      console.log('💰 Finalizando venda:', saleData)
       
-      console.log('Dados da venda:', saleData)
-      
-      // Enviar para API
       const response = await fetch('/api/sales', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(saleData)
       })
-      
+
       const result = await response.json()
-      console.log('Resposta da API:', result)
-      
-      if (result.success) {
-        // Limpar carrinho após venda
-        clearCart()
-        alert(`Venda realizada com sucesso! Total: ${formatCurrency(total)}`)
-      } else {
-        console.error('Erro da API:', result)
-        throw new Error(result.error || 'Erro ao processar venda')
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Erro ao finalizar venda')
       }
+      
+      toast.success('Venda finalizada com sucesso!')
+      console.log('✅ Venda criada:', result.data)
+      
+      // Disparar atualização do dashboard
+      triggerDashboardUpdate()
+      
+      clearCart()
+      
     } catch (error) {
-      console.error('Erro ao finalizar venda:', error)
-      alert('Erro ao finalizar venda: ' + (error instanceof Error ? error.message : 'Erro desconhecido'))
-    } finally {
-      setLoading(false)
+      console.error('❌ Erro ao finalizar venda:', error)
+      toast.error(`Erro ao finalizar venda: ${error instanceof Error ? error.message : 'Tente novamente.'}`)
     }
   }
 
+  // Produtos para exibir (apenas busca quando há termo de pesquisa)
+  const displayProducts = searchTerm.length >= 2 ? searchResults : []
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header Mobile */}
-      <header className="mobile-header">
-        <div className="flex items-center justify-between p-3">
-          <Link href="/" className="flex items-center text-gray-600 touch-friendly">
-            <ArrowLeft className="w-5 h-5 mr-2" />
-            <span className="mobile-optimized">Voltar</span>
+    <div className="min-h-screen bg-gray-50 p-4">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <Link href="/">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Voltar
+            </Button>
           </Link>
-          <div className="text-center">
-            <h1 className="text-lg font-semibold mobile-optimized">Sis IA Go - PDV</h1>
-            <p className="text-xs text-gray-500 mobile-optimized">
-              Aberto em: {pdvOpenTime ? formatDateTime(pdvOpenTime) : 'Carregando...'}
-            </p>
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900">PDV</h1>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          {/* Status de Conectividade */}
+          <ConnectivityStatus compact className="hidden sm:flex" />
+          
+          {/* Monitor de rede */}
+          <NetworkMonitor showIndicator={true} className="hidden sm:flex" />
+          
+          {/* Botão de atualizar */}
           <Button
             variant="outline"
             size="sm"
-            onClick={startScanner}
-            className="touch-friendly"
+            onClick={() => refetchProducts()}
+            disabled={productsLoading}
+            className="hidden sm:flex"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${productsLoading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </Button>
+          
+          {/* Botão do scanner */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowScanner(!showScanner)}
+            className="flex items-center gap-2"
           >
             <Scan className="w-4 h-4" />
+            <span className="hidden sm:inline">Scanner</span>
           </Button>
         </div>
-      </header>
+      </div>
 
-      <div className="pdv-grid">
-        {/* Área de Produtos */}
-        <div className="pdv-products">
-          <Card className="h-full">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="hidden lg:block">Produtos</CardTitle>
-                <div className="flex-1 lg:flex-none">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input
-                      placeholder="Buscar produto ou código..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      onFocus={() => searchTerm.length >= 2 && setShowSuggestions(true)}
-                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                      className="pl-10"
-                    />
-                    
-                    {/* Sugestões de Produtos */}
-                     {showSuggestions && searchResults.length > 0 && (
-                       <div className="search-suggestions">
-                         {searchResults.map((product) => (
-                           <div
-                             key={product.id}
-                             onClick={() => selectProductFromSuggestion(product)}
-                             className="search-suggestion-item"
-                           >
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-gray-900 truncate">{product.name}</p>
-                              <div className="flex items-center gap-2 text-sm text-gray-600">
-                                {product.barcode && (
-                                  <span className="font-mono">{product.barcode}</span>
-                                )}
-                                <span>•</span>
-                                <span>Estoque: {product.stock}</span>
-                              </div>
-                            </div>
-                            <div className="text-right ml-2">
-                              <p className="font-bold text-green-600">{formatCurrency(product.salePrice)}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+      {/* Informações do PDV */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-green-500" />
+              <div>
+                <p className="text-sm text-gray-600">PDV Aberto</p>
+                <p className="font-medium">
+                  {pdvOpenTime ? formatDateTime(pdvOpenTime) : 'Carregando...'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              {isOnline ? (
+                <Wifi className="w-5 h-5 text-green-500" />
+              ) : (
+                <WifiOff className="w-5 h-5 text-red-500" />
+              )}
+              <div>
+                <p className="text-sm text-gray-600">Status</p>
+                <p className="font-medium">
+                  {isOnline ? 'Online' : 'Offline'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5 text-blue-500" />
+              <div>
+                <p className="text-sm text-gray-600">Itens no Carrinho</p>
+                <p className="font-medium">{cart.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Scanner */}
+      {showScanner && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>Scanner de Código de Barras</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowScanner(false)}
+              >
+                ×
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ZXingReliableScanner
+              onScan={handleBarcodeScanned}
+              onClose={() => setShowScanner(false)}
+              isOpen={showScanner}
+            />
+            {barcodeLoading && (
+              <div className="mt-4 text-center">
+                <div className="inline-flex items-center gap-2 text-blue-600">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Buscando produto...
                 </div>
-                <Button
-                  className="hidden lg:flex ml-4"
-                  onClick={startScanner}
-                >
-                  <Scan className="w-4 h-4 mr-2" />
-                  Scanner
-                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Lista de Produtos */}
+        <div className="lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Produtos</CardTitle>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Digite o nome ou código do produto (mín. 2 caracteres)..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+                
+
               </div>
             </CardHeader>
             <CardContent>
-              {loading ? (
+              {/* Status de carregamento */}
+              {productsLoading && (
                 <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">Carregando produtos...</p>
+                  <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-blue-500" />
+                  <p className="text-gray-600">Carregando produtos...</p>
+                  {!isOnline && (
+                    <p className="text-sm text-orange-600 mt-1">
+                      Tentando carregar do cache offline...
+                    </p>
+                  )}
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredProducts.map((product) => (
-                    <div
-                      key={product.id}
-                      className="product-card"
-                      onClick={() => addToCart(product)}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <h3 className="font-medium text-gray-900 text-sm">{product.name}</h3>
-                        <span className="text-lg font-bold text-green-600">
-                          {formatCurrency(product.salePrice)}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mb-2">{product.description}</p>
-                      <div className="flex justify-between items-center text-xs text-gray-400">
-                        <span>Estoque: {product.stock}</span>
-                        <span>{product.barcode}</span>
-                      </div>
+              )}
+              
+              {/* Erro de carregamento */}
+              {productsError && (
+                <div className="text-center py-8">
+                  <AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-500" />
+                  <p className="text-red-600 mb-4">Erro ao carregar produtos</p>
+                  <Button
+                    variant="outline"
+                    onClick={() => refetchProducts()}
+                    className="mx-auto"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Tentar Novamente
+                  </Button>
+                </div>
+              )}
+              
+              {/* Lista de produtos */}
+              {!productsLoading && !productsError && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {displayProducts.length === 0 ? (
+                    <div className="col-span-full text-center py-8 text-gray-500">
+                      {searchTerm.length >= 2 ? 'Nenhum produto encontrado' : 'Digite pelo menos 2 caracteres para buscar produtos'}
                     </div>
-                  ))}
+                  ) : (
+                    displayProducts.map((product) => (
+                      <Card key={product.id} className="hover:shadow-md transition-shadow">
+                        <CardContent className="p-4">
+                          <h3 className="font-medium text-sm mb-2 line-clamp-2">
+                            {product.name}
+                          </h3>
+                          <p className="text-lg font-bold text-green-600 mb-3">
+                            {formatCurrency(product.salePrice)}
+                          </p>
+                          {product.barcode && (
+                            <p className="text-xs text-gray-500 mb-3">
+                              Código: {product.barcode}
+                            </p>
+                          )}
+                          <Button
+                            onClick={() => addToCart(product, 1)}
+                            className="w-full"
+                            size="sm"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Adicionar
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </div>
+              )}
+              
+              {/* Indicador de cache */}
+              {productsData?.fromCache && (
+                <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-md">
+                  <div className="flex items-center gap-2 text-orange-700">
+                    <WifiOff className="w-4 h-4" />
+                    <span className="text-sm">
+                      Dados carregados do cache offline
+                    </span>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -402,184 +490,157 @@ function PDVPageContent() {
         </div>
 
         {/* Carrinho */}
-        <div className="pdv-cart">
-          <Card className="flex-1 flex flex-col">
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center">
-                <ShoppingCart className="w-5 h-5 mr-2" />
-                Carrinho ({cart.length})
+        <div>
+          <Card className="sticky top-4">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>Carrinho</span>
+                {cart.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearCart}
+                    className="text-red-600 hover:text-red-700"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                )}
               </CardTitle>
             </CardHeader>
-            <CardContent className="flex-1 flex flex-col">
+            <CardContent>
               {cart.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center text-gray-500">
-                  <div className="text-center">
-                    <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    <p>Carrinho vazio</p>
-                    <p className="text-sm">Adicione produtos para começar</p>
-                  </div>
+                <div className="text-center py-8 text-gray-500">
+                  <ShoppingCart className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>Carrinho vazio</p>
                 </div>
               ) : (
                 <>
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="space-y-4 mb-6">
                     {cart.map((item) => (
-                      <div key={item.product.id} className="cart-item">
+                      <div key={item.product.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                         <div className="flex-1">
                           <h4 className="font-medium text-sm">{item.product.name}</h4>
-                          <p className="text-xs text-gray-500">
-                            {formatCurrency(item.product.salePrice)} x {item.quantity}
+                          <p className="text-sm text-gray-600">
+                            {formatCurrency(item.product.salePrice)} × {item.quantity}
                           </p>
                         </div>
-                        <div className="flex items-center space-x-1 lg:space-x-2">
+                        <div className="flex items-center gap-2">
                           <Button
                             variant="outline"
-                            size="icon"
-                            className="h-9 w-9 lg:h-8 lg:w-8 touch-friendly"
-                            onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                            size="sm"
+                            onClick={() => updateCartItemQuantity(item.product.id, item.quantity - 1)}
                           >
-                            <Minus className="w-4 h-4 lg:w-3 lg:h-3" />
+                            <Minus className="w-3 h-3" />
                           </Button>
-                          <span className="w-8 text-center text-sm font-medium">{item.quantity}</span>
+                          <span className="w-8 text-center text-sm">{item.quantity}</span>
                           <Button
                             variant="outline"
-                            size="icon"
-                            className="h-9 w-9 lg:h-8 lg:w-8 touch-friendly"
-                            onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                            size="sm"
+                            onClick={() => updateCartItemQuantity(item.product.id, item.quantity + 1)}
                           >
-                            <Plus className="w-4 h-4 lg:w-3 lg:h-3" />
+                            <Plus className="w-3 h-3" />
                           </Button>
                           <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-9 w-9 lg:h-8 lg:w-8 text-red-600 hover:text-red-700 touch-friendly"
+                            variant="ghost"
+                            size="sm"
                             onClick={() => removeFromCart(item.product.id)}
+                            className="text-red-600 hover:text-red-700"
                           >
-                            <Trash2 className="w-4 h-4 lg:w-3 lg:h-3" />
+                            <Trash2 className="w-3 h-3" />
                           </Button>
-                        </div>
-                        <div className="text-right ml-4">
-                          <p className="font-medium">{formatCurrency(item.total)}</p>
                         </div>
                       </div>
                     ))}
                   </div>
 
                   {/* Totais */}
-                  <div className="border-t pt-4 mt-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>Subtotal:</span>
-                        <span>{formatCurrency(subtotal)}</span>
-                      </div>
-                      {discount > 0 && (
-                        <div className="flex justify-between text-sm text-green-600">
-                          <span>Desconto:</span>
-                          <span>-{formatCurrency(discount)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-lg font-bold border-t pt-2">
-                        <span>Total:</span>
-                        <span>{formatCurrency(total)}</span>
-                      </div>
+                  <div className="border-t pt-4 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Subtotal:</span>
+                      <span>{formatCurrency(subtotal)}</span>
                     </div>
-
-                    {/* Botões de Ação */}
-                    <div className="mt-4 space-y-2">
-                      {!showPayment ? (
-                        <>
-                          <Button
-                            className="w-full h-12 lg:h-10 touch-friendly text-sm lg:text-base font-medium"
-                            onClick={() => setShowPayment(true)}
-                            disabled={cart.length === 0}
-                          >
-                            Finalizar Venda
-                          </Button>
-                          <Button
-                            variant="outline"
-                            className="w-full h-12 lg:h-10 touch-friendly text-sm lg:text-base"
-                            onClick={clearCart}
-                            disabled={cart.length === 0}
-                          >
-                            Limpar Carrinho
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <div className="space-y-3">
-                            <p className="text-sm font-medium mobile-optimized">Forma de Pagamento:</p>
-                            <div className="grid grid-cols-2 gap-2">
-                              <Button
-                                variant={selectedPaymentMethod === PaymentMethod.CASH ? 'default' : 'outline'}
-                                className="text-xs lg:text-sm h-12 lg:h-10 touch-friendly"
-                                onClick={() => setSelectedPaymentMethod(PaymentMethod.CASH)}
-                              >
-                                <Banknote className="w-4 h-4 mr-1" />
-                                Dinheiro
-                              </Button>
-                              <Button
-                                variant={selectedPaymentMethod === PaymentMethod.PIX ? 'default' : 'outline'}
-                                className="text-xs lg:text-sm h-12 lg:h-10 touch-friendly"
-                                onClick={() => setSelectedPaymentMethod(PaymentMethod.PIX)}
-                              >
-                                <Smartphone className="w-4 h-4 mr-1" />
-                                PIX
-                              </Button>
-                              <Button
-                                variant={selectedPaymentMethod === PaymentMethod.CREDIT_CARD ? 'default' : 'outline'}
-                                className="text-xs lg:text-sm h-12 lg:h-10 touch-friendly"
-                                onClick={() => setSelectedPaymentMethod(PaymentMethod.CREDIT_CARD)}
-                              >
-                                <CreditCard className="w-4 h-4 mr-1" />
-                                Crédito
-                              </Button>
-                              <Button
-                                variant={selectedPaymentMethod === PaymentMethod.DEBIT_CARD ? 'default' : 'outline'}
-                                className="text-xs lg:text-sm h-12 lg:h-10 touch-friendly"
-                                onClick={() => setSelectedPaymentMethod(PaymentMethod.DEBIT_CARD)}
-                              >
-                                <CreditCard className="w-4 h-4 mr-1" />
-                                Débito
-                              </Button>
-                            </div>
-                          </div>
-                          <Button
-                            className="w-full h-12 lg:h-10 touch-friendly text-sm lg:text-base font-medium"
-                            onClick={finalizeSale}
-                            disabled={!selectedPaymentMethod || loading}
-                          >
-                            {loading ? 'Processando...' : 'Confirmar Pagamento'}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            className="w-full h-12 lg:h-10 touch-friendly text-sm lg:text-base"
-                            onClick={() => setShowPayment(false)}
-                          >
-                            Voltar
-                          </Button>
-                        </>
-                      )}
+                    {discount > 0 && (
+                      <div className="flex justify-between text-sm text-green-600">
+                        <span>Desconto:</span>
+                        <span>-{formatCurrency(discount)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-lg font-bold border-t pt-2">
+                      <span>Total:</span>
+                      <span>{formatCurrency(total)}</span>
                     </div>
                   </div>
+
+                  {/* Métodos de pagamento */}
+                  {!showPayment ? (
+                    <Button
+                      onClick={() => setShowPayment(true)}
+                      className="w-full mt-4"
+                      size="lg"
+                    >
+                      <CreditCard className="w-4 h-4 mr-2" />
+                      Finalizar Venda
+                    </Button>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      <h4 className="font-medium">Método de Pagamento:</h4>
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { method: PaymentMethod.CASH, icon: Banknote, label: 'Dinheiro' },
+                          { method: PaymentMethod.CREDIT_CARD, icon: CreditCard, label: 'Cartão de Crédito' },
+                          { method: PaymentMethod.DEBIT_CARD, icon: CreditCard, label: 'Cartão de Débito' },
+                          { method: PaymentMethod.PIX, icon: Smartphone, label: 'PIX' },
+                        ].map(({ method, icon: Icon, label }) => (
+                          <Button
+                            key={method}
+                            variant={selectedPaymentMethod === method ? 'default' : 'outline'}
+                            onClick={() => setSelectedPaymentMethod(method)}
+                            className="justify-start"
+                          >
+                            <Icon className="w-4 h-4 mr-2" />
+                            {label}
+                          </Button>
+                        ))}
+                      </div>
+                      
+                      <div className="flex gap-2 mt-4">
+                        <Button
+                          variant="outline"
+                          onClick={() => setShowPayment(false)}
+                          className="flex-1"
+                        >
+                          Voltar
+                        </Button>
+                        <Button
+                          onClick={finalizeSale}
+                          disabled={!selectedPaymentMethod}
+                          className="flex-1"
+                        >
+                          Confirmar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </CardContent>
           </Card>
         </div>
       </div>
-
-      {/* Scanner de Código de Barras */}
-      <ZXingReliableScanner
-          isOpen={showScanner}
-          onScan={handleBarcodeScanned}
-          onClose={() => setShowScanner(false)}
-        />
     </div>
   )
 }
 
 export default function PDVPage() {
   return (
-    <Suspense fallback={<div>Carregando...</div>}>
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-blue-500" />
+          <p className="text-gray-600">Carregando PDV...</p>
+        </div>
+      </div>
+    }>
       <PDVPageContent />
     </Suspense>
   )

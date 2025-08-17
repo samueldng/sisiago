@@ -21,21 +21,45 @@ export function formatCurrency(value: number | null | undefined): string {
 }
 
 // Formatação de data brasileira
-export function formatDate(date: Date | string): string {
-  const dateObj = typeof date === 'string' ? new Date(date) : date
-  return new Intl.DateTimeFormat('pt-BR').format(dateObj)
+export function formatDate(date: Date | string | null | undefined): string {
+  if (!date) {
+    return '--/--/----'
+  }
+  
+  try {
+    const dateObj = typeof date === 'string' ? new Date(date) : date
+    if (isNaN(dateObj.getTime())) {
+      return '--/--/----'
+    }
+    
+    return new Intl.DateTimeFormat('pt-BR').format(dateObj)
+  } catch (error) {
+    return '--/--/----'
+  }
 }
 
 // Formatação de data e hora brasileira
-export function formatDateTime(date: Date | string): string {
-  const dateObj = typeof date === 'string' ? new Date(date) : date
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(dateObj)
+export function formatDateTime(date: Date | string | null | undefined): string {
+  if (!date) {
+    return '--:--'
+  }
+  
+  try {
+    const dateObj = typeof date === 'string' ? new Date(date) : date
+    if (isNaN(dateObj.getTime())) {
+      return '--:--'
+    }
+    
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(dateObj)
+  } catch (error) {
+    return '--:--'
+  }
 }
 
 // Formatação de números
@@ -133,10 +157,12 @@ export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout
+  let timeout: number | undefined
   return (...args: Parameters<T>) => {
-    clearTimeout(timeout)
-    timeout = setTimeout(() => func(...args), wait)
+    if (timeout !== undefined) {
+      clearTimeout(timeout)
+    }
+    timeout = window.setTimeout(() => func(...args), wait)
   }
 }
 

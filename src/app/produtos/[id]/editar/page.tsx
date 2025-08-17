@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { formatCurrency } from '@/utils'
 import { Product, Category, ProductUnit } from '@/types'
-import BarcodeScanner from '@/components/BarcodeScanner'
+import ZXingReliableScanner from '@/components/ZXingReliableScanner'
 
 interface ProductFormData {
   name: string
@@ -28,6 +28,8 @@ interface ProductFormData {
   unit: ProductUnit
   categoryId: string
   isActive: boolean
+  isPerishable: boolean
+  expiryDate: string
 }
 
 export default function EditProductPage() {
@@ -44,7 +46,9 @@ export default function EditProductPage() {
     stock: '',
     unit: ProductUnit.UN,
     categoryId: '',
-    isActive: true
+    isActive: true,
+    isPerishable: false,
+    expiryDate: ''
   })
 
   const [categories, setCategories] = useState<Category[]>([])
@@ -75,7 +79,9 @@ export default function EditProductPage() {
           stock: product.stock?.toString() || '',
           unit: product.unit || 'UN',
           categoryId: product.categoryId || '',
-          isActive: product.isActive ?? true
+          isActive: product.isActive ?? true,
+          isPerishable: product.isPerishable ?? false,
+          expiryDate: product.expiryDate ? new Date(product.expiryDate).toISOString().split('T')[0] : ''
         })
       } else {
         console.error('Erro ao carregar produto:', data.error)
@@ -137,6 +143,15 @@ export default function EditProductPage() {
       newErrors.categoryId = 'Categoria é obrigatória'
     }
 
+    // Validar produto perecível
+    if (formData.isPerishable && !formData.expiryDate) {
+      newErrors.expiryDate = 'Data de vencimento é obrigatória para produtos perecíveis'
+    }
+
+    if (!formData.isPerishable && formData.expiryDate) {
+      newErrors.expiryDate = 'Produtos não perecíveis não devem ter data de vencimento'
+    }
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -160,7 +175,9 @@ export default function EditProductPage() {
         stock: parseInt(formData.stock),
         unit: formData.unit,
         categoryId: formData.categoryId,
-        isActive: formData.isActive
+        isActive: formData.isActive,
+        isPerishable: formData.isPerishable,
+        expiryDate: formData.isPerishable && formData.expiryDate ? new Date(formData.expiryDate).toISOString() : undefined
       }
 
       const response = await fetch(`/api/products/${productId}`, {
@@ -443,6 +460,45 @@ export default function EditProductPage() {
             </CardContent>
           </Card>
 
+          {/* Produto Perecível */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Informações de Validade</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="isPerishable"
+                  checked={formData.isPerishable}
+                  onChange={(e) => handleInputChange('isPerishable', e.target.checked)}
+                  className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                />
+                <label htmlFor="isPerishable" className="text-sm font-medium text-gray-700">
+                  Este produto é perecível (possui data de vencimento)
+                </label>
+              </div>
+              
+              {formData.isPerishable && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Data de Vencimento *
+                  </label>
+                  <Input
+                    type="date"
+                    value={formData.expiryDate}
+                    onChange={(e) => handleInputChange('expiryDate', e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className={errors.expiryDate ? 'border-red-500' : ''}
+                  />
+                  {errors.expiryDate && (
+                    <p className="text-red-500 text-xs mt-1">{errors.expiryDate}</p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Botões de Ação */}
           <div className="flex justify-end space-x-4">
             <Button
@@ -475,10 +531,10 @@ export default function EditProductPage() {
 
       {/* Scanner de Código de Barras */}
       {isScanning && (
-        <BarcodeScanner
+        <ZXingReliableScanner
+          isOpen={isScanning}
           onScan={handleScanResult}
           onClose={closeBarcodeScanner}
-          isOpen={isScanning}
         />
       )}
     </div>

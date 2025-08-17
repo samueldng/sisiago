@@ -82,8 +82,7 @@ temp/
 # Vercel
 .vercel
 
-# Prisma
-prisma/migrations/
+
 
 # Scripts temporários
 migrate-to-postgres.js

@@ -2,11 +2,25 @@
 
 Sistema de Ponto de Venda (PDV) moderno e modular desenvolvido com Next.js 14, React, TypeScript e Tailwind CSS.
 
+> 📋 **[Ver Documentação Completa (DocView)](./DOCVIEW.md)** - Documentação técnica detalhada, arquitetura e roadmap
+
+## 🌐 Aplicação em Produção
+
+**URL Principal**: https://sisiago-2g8jnazv1-samuels-projects-9c53f90f.vercel.app
+
+### 🔗 Links Diretos:
+- **PDV (Ponto de Venda)**: https://sisiago-2g8jnazv1-samuels-projects-9c53f90f.vercel.app/pdv
+- **Teste de Scanners**: https://sisiago-2g8jnazv1-samuels-projects-9c53f90f.vercel.app/test-scanner
+- **Gestão de Produtos**: https://sisiago-2g8jnazv1-samuels-projects-9c53f90f.vercel.app/produtos
+- **Relatórios**: https://sisiago-2g8jnazv1-samuels-projects-9c53f90f.vercel.app/relatorios
+
 ## 🚀 Deploy na Vercel + Supabase
 
 ### Pré-requisitos
 1. Conta na [Vercel](https://vercel.com)
 2. Conta no [Supabase](https://supabase.com)
+3. Node.js 18+ instalado
+4. Git configurado
 
 ### Configuração do Supabase
 
@@ -17,7 +31,7 @@ Sistema de Ponto de Venda (PDV) moderno e modular desenvolvido com Next.js 14, R
 
 2. **Configurar banco de dados:**
    ```sql
-   -- O Prisma criará as tabelas automaticamente
+   -- As tabelas são criadas via Supabase
    -- Apenas certifique-se de que o projeto está ativo
    ```
 
@@ -32,11 +46,13 @@ Sistema de Ponto de Venda (PDV) moderno e modular desenvolvido com Next.js 14, R
    DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
    NEXTAUTH_SECRET=your-secret-key-here
    NEXTAUTH_URL=https://your-app.vercel.app
+   SUPABASE_URL=https://[PROJECT-REF].supabase.co
+   SUPABASE_ANON_KEY=your-anon-key
    ```
 
 3. **Deploy automático:**
    - A Vercel fará o build automaticamente
-   - O Prisma gerará o cliente durante o build
+   - O cliente Supabase é configurado automaticamente
 
 ### Comandos Úteis
 
@@ -54,23 +70,27 @@ npm run migrate:deploy
 npm run db:seed
 ```
 
-## Características
+## ✨ Características Principais
 
 - **Mobile-First**: Interface otimizada para dispositivos móveis
-- **Scanner de Código de Barras**: Leitura via câmera do celular
+- **Scanner Confiável**: ZXing scanner que elimina números aleatórios
 - **Pagamentos PIX**: Geração de QR codes para pagamentos instantâneos
 - **Gestão Completa**: Produtos, vendas, estoque e relatórios
 - **Arquitetura Modular**: Fácil expansão e manutenção
-- **Deploy Simples**: Vercel + Supabase
+- **Deploy Automático**: Vercel + Supabase com CI/CD
+- **Type Safety**: 100% TypeScript com validação Zod
+- **Performance**: SSR/SSG otimizado, Edge Runtime
 
-## Tecnologias
+## 🛠️ Stack Tecnológico
 
-- **Frontend**: Next.js 14, React, TypeScript
-- **Styling**: Tailwind CSS, Radix UI
-- **Banco de Dados**: Prisma ORM + PostgreSQL (Supabase)
-- **Deploy**: Vercel
-- **Validação**: Zod, React Hook Form
-- **Funcionalidades**: QR Scanner, PIX QR Code
+- **Frontend**: Next.js 14 (App Router), React 18, TypeScript
+- **Styling**: Tailwind CSS, Radix UI, shadcn/ui
+- **Banco de Dados**: Supabase PostgreSQL
+- **Deploy**: Vercel com Edge Runtime
+- **Validação**: Zod + React Hook Form
+- **Scanner**: @zxing/library (ZXing)
+- **Pagamentos**: PIX QR Code generation
+- **Autenticação**: NextAuth.js (planejado)
 
 ## Instalação Local
 
@@ -87,7 +107,7 @@ cp .env.example .env
 # Edite o .env com suas configurações
 
 # Configure o banco de dados
-npx prisma migrate dev
+# Tabelas criadas via Supabase SQL Editor
 
 # Popular com dados iniciais
 npm run db:seed
@@ -139,14 +159,35 @@ src/
 - Verificação de status
 - Histórico de transações
 
-## Próximos Módulos
+## 🔮 Roadmap
 
+### ✅ Implementado
+- Scanner de código de barras confiável (ZXing)
+- PDV completo com carrinho dinâmico
+- Gestão de produtos com CRUD
+- Sistema de vendas e histórico
+- Deploy automático na Vercel
+
+### 🚧 Em Desenvolvimento
+- Relatórios e analytics avançados
+- Sistema de estoque detalhado
+- Configurações personalizáveis
+
+### 📋 Planejado
 - **Estoque Avançado**: Controle detalhado de entrada/saída
 - **Financeiro**: Fluxo de caixa e relatórios
 - **CRM**: Gestão de clientes e fidelidade
-- **Relatórios**: Dashboards e analytics
+- **Autenticação**: Sistema de usuários e permissões
 - **Módulos Específicos**: Restaurantes, oficinas, etc.
+- **App Mobile**: Aplicativo nativo React Native
 
-## Licença
+## 📚 Documentação
+
+- **[DocView Completo](./DOCVIEW.md)** - Documentação técnica detalhada
+- **[Guia de Setup](./README-SETUP.md)** - Configuração local
+- **[Deploy Guide](./DEPLOY.md)** - Guia de deploy
+- **[Bug Fixes](./BUGFIXES.md)** - Histórico de correções
+
+## 📄 Licença
 
 MIT License

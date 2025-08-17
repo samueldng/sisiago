@@ -41,71 +41,37 @@ export default function SaleDetailsPage() {
   const loadSale = async () => {
     try {
       setLoading(true)
-      // TODO: Implementar chamada para API
-      // const response = await fetch(`/api/sales/${saleId}`)
-      // const data = await response.json()
-      // setSale(data)
+      const response = await fetch(`/api/sales/${saleId}`)
       
-      // Dados mockados para demonstração
-      const mockSale: Sale = {
-        id: saleId,
-        total: 25.50,
-        discount: 2.50,
-        finalTotal: 23.00,
-        paymentMethod: PaymentMethod.PIX,
-        status: SaleStatus.PAID,
-        notes: 'Cliente solicitou desconto de R$ 2,50',
-        userId: '1',
-        items: [
-          {
-            id: '1',
-            quantity: 3,
-            unitPrice: 8.50,
-            total: 25.50,
-            saleId: saleId,
-            productId: '1',
-            product: {
-              id: '1',
-              name: 'Coca-Cola 2L',
-              barcode: '7894900011517',
-              salePrice: 8.50,
-              costPrice: 6.00,
-              stock: 50,
-              unit: 'UN' as any,
-              description: 'Refrigerante Coca-Cola 2 Litros',
-              isActive: true,
-              categoryId: '1',
-              createdAt: new Date(),
-              updatedAt: new Date()
-            },
-            createdAt: new Date()
-          }
-        ],
-        user: {
-          id: '1',
-          name: 'João Silva',
-          email: 'joao@exemplo.com',
-          role: 'OPERATOR' as any,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        payment: {
-          id: '1',
-          amount: 23.00,
-          method: PaymentMethod.PIX,
-          status: 'PAID' as any,
-          transactionId: 'PIX123456789',
-          paidAt: new Date(),
-          saleId: saleId,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          },
-        createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutos atrás
-        updatedAt: new Date()
+      if (!response.ok) {
+        throw new Error('Venda não encontrada')
       }
-      setSale(mockSale)
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        setSale(data.data)
+      } else {
+        throw new Error(data.error || 'Erro ao carregar venda')
+      }
     } catch (error) {
       console.error('Erro ao carregar venda:', error)
+      // Fallback para dados básicos em caso de erro
+       setSale({
+         id: saleId,
+         total: 0,
+         discount: 0,
+         finalTotal: 0,
+         paymentMethod: PaymentMethod.CASH,
+         status: SaleStatus.PENDING,
+         notes: '',
+         userId: '',
+         items: [],
+         user: null,
+         payment: null,
+         createdAt: new Date(),
+         updatedAt: new Date()
+       })
     } finally {
       setLoading(false)
     }
@@ -114,16 +80,28 @@ export default function SaleDetailsPage() {
   const handleCancelSale = async () => {
     if (!sale || sale.status !== SaleStatus.PENDING) return
     
+    if (!confirm('Tem certeza que deseja cancelar esta venda?')) return
+    
     try {
       setUpdating(true)
-      // TODO: Implementar chamada para API
-      // await fetch(`/api/sales/${saleId}/cancel`, { method: 'POST' })
+      const response = await fetch(`/api/sales/${saleId}`, { 
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao cancelar venda')
+      }
       
       setSale(prev => prev ? { ...prev, status: SaleStatus.CANCELLED } : null)
       alert('Venda cancelada com sucesso!')
     } catch (error) {
       console.error('Erro ao cancelar venda:', error)
-      alert('Erro ao cancelar venda')
+      alert(error instanceof Error ? error.message : 'Erro ao cancelar venda')
     } finally {
       setUpdating(false)
     }
@@ -134,18 +112,33 @@ export default function SaleDetailsPage() {
     
     try {
       setUpdating(true)
-      // TODO: Implementar chamada para API para verificar status do pagamento
-      // const response = await fetch(`/api/sales/${saleId}/refresh-status`, { method: 'POST' })
-      // const data = await response.json()
       
-      // Simular atualização de status
+      // Atualizar status para PAID se estiver PENDING
       if (sale.status === SaleStatus.PENDING) {
+        const response = await fetch(`/api/sales/${saleId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            status: SaleStatus.PAID
+          })
+        })
+        
+        const data = await response.json()
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Erro ao atualizar status')
+        }
+        
         setSale(prev => prev ? { ...prev, status: SaleStatus.PAID } : null)
         alert('Status atualizado! Pagamento confirmado.')
+      } else {
+        alert('Esta venda não pode ter o status alterado.')
       }
     } catch (error) {
       console.error('Erro ao atualizar status:', error)
-      alert('Erro ao verificar status do pagamento')
+      alert(error instanceof Error ? error.message : 'Erro ao verificar status do pagamento')
     } finally {
       setUpdating(false)
     }
