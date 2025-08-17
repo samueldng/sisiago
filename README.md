@@ -6,13 +6,14 @@ Sistema de Ponto de Venda (PDV) moderno e modular desenvolvido com Next.js 14, R
 
 ## 🌐 Aplicação em Produção
 
-**URL Principal**: https://sisiago-2g8jnazv1-samuels-projects-9c53f90f.vercel.app
+**URL Principal**: https://sisiago-eouvojjuk-samuels-projects-9c53f90f.vercel.app
 
 ### 🔗 Links Diretos:
-- **PDV (Ponto de Venda)**: https://sisiago-2g8jnazv1-samuels-projects-9c53f90f.vercel.app/pdv
-- **Teste de Scanners**: https://sisiago-2g8jnazv1-samuels-projects-9c53f90f.vercel.app/test-scanner
-- **Gestão de Produtos**: https://sisiago-2g8jnazv1-samuels-projects-9c53f90f.vercel.app/produtos
-- **Relatórios**: https://sisiago-2g8jnazv1-samuels-projects-9c53f90f.vercel.app/relatorios
+- **PDV (Ponto de Venda)**: https://sisiago-eouvojjuk-samuels-projects-9c53f90f.vercel.app/pdv
+- **Gerenciamento de Usuários**: https://sisiago-eouvojjuk-samuels-projects-9c53f90f.vercel.app/users
+- **Logs de Auditoria**: https://sisiago-eouvojjuk-samuels-projects-9c53f90f.vercel.app/audit-logs
+- **Gestão de Produtos**: https://sisiago-eouvojjuk-samuels-projects-9c53f90f.vercel.app/produtos
+- **Relatórios**: https://sisiago-eouvojjuk-samuels-projects-9c53f90f.vercel.app/relatorios
 
 ## 🚀 Deploy na Vercel + Supabase
 
@@ -76,6 +77,8 @@ npm run db:seed
 - **Scanner Confiável**: ZXing scanner que elimina números aleatórios
 - **Pagamentos PIX**: Geração de QR codes para pagamentos instantâneos
 - **Gestão Completa**: Produtos, vendas, estoque e relatórios
+- **Gerenciamento de Usuários**: Sistema completo de usuários com roles e permissões
+- **Sistema de Auditoria**: Logs detalhados de todas as ações do sistema
 - **Arquitetura Modular**: Fácil expansão e manutenção
 - **Deploy Automático**: Vercel + Supabase com CI/CD
 - **Type Safety**: 100% TypeScript com validação Zod
@@ -124,12 +127,17 @@ src/
 │   ├── pdv/            # Módulo PDV (Ponto de Venda)
 │   ├── produtos/       # Gestão de Produtos
 │   ├── vendas/         # Histórico de Vendas
-│   └── pagamentos/     # Controle de Pagamentos
+│   ├── pagamentos/     # Controle de Pagamentos
+│   ├── users/          # Gerenciamento de Usuários
+│   ├── audit-logs/     # Logs de Auditoria
+│   └── api/            # APIs do sistema
 ├── components/         # Componentes reutilizáveis
-│   ├── ui/            # Componentes de UI base
+│   ├── ui/            # Componentes de UI base (Dialog, Select, etc.)
 │   ├── BarcodeScanner.tsx
 │   └── PixQRCode.tsx
 ├── lib/               # Utilitários e configurações
+│   └── audit.ts       # Sistema de auditoria
+├── contexts/          # Contextos React (AuthContext)
 └── types/             # Definições de tipos TypeScript
 ```
 
@@ -159,6 +167,18 @@ src/
 - Verificação de status
 - Histórico de transações
 
+### 👥 Gerenciamento de Usuários
+- CRUD completo de usuários
+- Sistema de roles e permissões
+- Interface responsiva com filtros
+- Integração com sistema de auditoria
+
+### 📋 Sistema de Auditoria
+- Logs automáticos de todas as ações
+- Rastreamento por usuário e timestamp
+- Interface de visualização com filtros
+- Armazenamento seguro no banco
+
 ## 🔮 Roadmap
 
 ### ✅ Implementado
@@ -166,6 +186,9 @@ src/
 - PDV completo com carrinho dinâmico
 - Gestão de produtos com CRUD
 - Sistema de vendas e histórico
+- Gerenciamento completo de usuários
+- Sistema de auditoria e logs
+- Correção de problemas de autenticação e hidratação
 - Deploy automático na Vercel
 
 ### 🚧 Em Desenvolvimento
@@ -183,6 +206,7 @@ src/
 
 ## 📚 Documentação
 
+- **[Documentação Completa](./DOCUMENTACAO-COMPLETA.md)** - Documentação completa de todas as correções e implementações
 - **[DocView Completo](./DOCVIEW.md)** - Documentação técnica detalhada
 - **[Guia de Setup](./README-SETUP.md)** - Configuração local
 - **[Deploy Guide](./DEPLOY.md)** - Guia de deploy
