@@ -56,7 +56,10 @@ export async function GET(request: NextRequest) {
       return userWithoutPassword;
     }) || [];
 
-    return NextResponse.json({ users: usersWithoutPassword });
+    return NextResponse.json({
+      success: true,
+      users: usersWithoutPassword
+    });
 
   } catch (error) {
     console.error('Erro na listagem de usuários:', error);
@@ -114,19 +117,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Criar log de auditoria
-    const currentUserId = request.headers.get('x-user-id')!;
-    await auditLogger.logInsert(
-      'users',
-      newUser.id,
-      {
-        email: newUser.email,
-        name: newUser.name,
-        role: newUser.role
-      },
-      currentUserId,
-      request
-    );
+    // Registrar log de auditoria
+    try {
+      const { createAuditLog } = await import('@/lib/audit');
+      await createAuditLog('users', newUser.id, 'INSERT', {
+        newValues: {
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role,
+          is_active: newUser.is_active
+        },
+        userId: request.headers.get('x-user-id') || undefined,
+        ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      });
+    } catch (auditError) {
+      console.error('Erro ao registrar log de auditoria:', auditError);
+      // Não falhar a operação por causa do log
+    }
 
     // Remover senha antes de retornar
     const { password, ...userWithoutPassword } = newUser;

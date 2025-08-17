@@ -1,11 +1,4 @@
-import { type ClassValue, clsx } from 'clsx'
-import { twMerge } from 'tailwind-merge'
 import { ProductUnit, PaymentMethod, SaleStatus, PaymentStatus } from '@/types'
-
-// Utilitário para combinar classes CSS
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
-}
 
 // Formatação de moeda brasileira
 export function formatCurrency(value: number | null | undefined): string {

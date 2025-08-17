@@ -6,12 +6,9 @@ const nextConfig = {
   compress: true,
   
   // Configurações experimentais
-  // Otimizações de performance
-  optimizeCss: true,
-  optimizePackageImports: ['@radix-ui/react-icons', 'lucide-react'],
-  
-  // Server Components
-  serverExternalPackages: [],
+  experimental: {
+    // Configurações experimentais para Next.js 14
+  },
   
   // Configurações de imagens
   images: {

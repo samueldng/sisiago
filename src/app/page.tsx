@@ -27,7 +27,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 
 // Importação dinâmica para evitar problemas de hidratação
-const DashboardStats = dynamic(() => import('@/components/DashboardStats'), {
+const DashboardStats = dynamic(() => import('@/components/DashboardStats').then(mod => ({ default: mod.DashboardStats })), {
   ssr: false,
   loading: () => (
     <section className="mb-8">

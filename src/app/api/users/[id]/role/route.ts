@@ -2,17 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/supabase';
 import { z } from 'zod';
 
-// Schema de validação para alteração de status/role
-const statusRoleSchema = z.object({
-  is_active: z.boolean().optional(),
-  role: z.enum(['admin', 'manager', 'user']).optional()
-}).refine(data => data.is_active !== undefined || data.role !== undefined, {
-  message: "Pelo menos um campo (is_active ou role) deve ser fornecido"
+// Schema de validação para alteração de role
+const roleSchema = z.object({
+  role: z.enum(['admin', 'manager', 'user'], {
+    errorMap: () => ({ message: 'Role deve ser admin, manager ou user' })
+  })
 });
 
-type StatusRoleUpdate = z.infer<typeof statusRoleSchema>;
+type RoleUpdate = z.infer<typeof roleSchema>;
 
-// PATCH - Alterar status ou role do usuário
+// PATCH - Alterar role do usuário
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -21,18 +20,18 @@ export async function PATCH(
     const userRole = request.headers.get('x-user-role');
     const currentUserId = request.headers.get('x-user-id');
     
-    // Apenas admin pode alterar status/role de usuários
+    // Apenas admin pode alterar role de usuários
     if (userRole !== 'admin') {
       return NextResponse.json(
-        { error: 'Acesso negado. Apenas administradores podem alterar status/role de usuários.' },
+        { error: 'Acesso negado. Apenas administradores podem alterar role de usuários.' },
         { status: 403 }
       );
     }
 
-    // Admin não pode alterar seu próprio status
+    // Admin não pode alterar sua própria role
     if (currentUserId === params.id) {
       return NextResponse.json(
-        { error: 'Você não pode alterar seu próprio status ou role' },
+        { error: 'Você não pode alterar sua própria role' },
         { status: 400 }
       );
     }
@@ -40,7 +39,7 @@ export async function PATCH(
     const body = await request.json();
     
     // Validar dados
-    const validatedData = statusRoleSchema.parse(body);
+    const validatedData = roleSchema.parse(body);
 
     // Verificar se o usuário existe
     const { data: existingUser, error: findError } = await db.users.findById(params.id);
@@ -52,33 +51,15 @@ export async function PATCH(
       );
     }
 
-    // Preparar dados para atualização
-    const updateData: any = {};
-    
-    // Temporariamente removido is_active até a coluna ser adicionada ao banco
-    // if (validatedData.is_active !== undefined) {
-    //   updateData.is_active = validatedData.is_active;
-    // }
-    
-    if (validatedData.role !== undefined) {
-      updateData.role = validatedData.role;
-    }
-    
-    // Se não há dados para atualizar, retornar erro
-    if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        { error: 'Nenhum dado válido fornecido para atualização. Coluna is_active não está disponível.' },
-        { status: 400 }
-      );
-    }
-
-    // Atualizar usuário
-    const { data: updatedUser, error } = await db.users.update(params.id, updateData);
+    // Atualizar role do usuário
+    const { data: updatedUser, error } = await db.users.update(params.id, {
+      role: validatedData.role
+    });
 
     if (error) {
-      console.error('Erro ao atualizar status/role do usuário:', error);
+      console.error('Erro ao atualizar role do usuário:', error);
       return NextResponse.json(
-        { error: 'Erro ao atualizar status/role do usuário' },
+        { error: 'Erro ao atualizar role do usuário' },
         { status: 500 }
       );
     }
@@ -88,11 +69,12 @@ export async function PATCH(
       const { createAuditLog } = await import('@/lib/audit');
       await createAuditLog('users', params.id, 'UPDATE', {
         oldValues: {
-          is_active: existingUser.is_active,
           role: existingUser.role
         },
-        newValues: validatedData,
-        userId: request.headers.get('x-user-id') || undefined,
+        newValues: {
+          role: updatedUser.role
+        },
+        userId: currentUserId || undefined,
         ipAddress: request.headers.get('x-forwarded-for') || 'unknown',
         userAgent: request.headers.get('user-agent') || 'unknown'
       });
@@ -105,12 +87,12 @@ export async function PATCH(
     const { password, ...userWithoutPassword } = updatedUser;
 
     return NextResponse.json({
-      message: 'Status/Role do usuário atualizado com sucesso',
+      message: 'Role do usuário atualizada com sucesso',
       user: userWithoutPassword
     });
 
   } catch (error) {
-    console.error('Erro na atualização de status/role:', error);
+    console.error('Erro na atualização de role:', error);
     
     if (error instanceof z.ZodError) {
       return NextResponse.json(

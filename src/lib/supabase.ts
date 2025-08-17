@@ -255,6 +255,23 @@ export interface AuditLog {
   created_at: string;
 }
 
+// Função para verificar permissões do usuário
+export const checkUserPermission = async (userId: string, requiredRole: string): Promise<boolean> => {
+  try {
+    const { data: user, error } = await db.users.findById(userId);
+    
+    if (error || !user) {
+      console.error('Erro ao verificar permissão do usuário:', error);
+      return false;
+    }
+    
+    return user.role === requiredRole;
+  } catch (error) {
+    console.error('Erro ao verificar permissão do usuário:', error);
+    return false;
+  }
+};
+
 // Função helper para criar logs de auditoria
 export const createAuditLog = async ({
   tableName,
