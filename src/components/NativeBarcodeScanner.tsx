@@ -146,7 +146,10 @@ export default function NativeBarcodeScanner({ isOpen, onClose, onScan }: Native
       // Converter para escala de cinza
       const grayData = new Uint8Array(width * height)
       for (let i = 0; i < data.length; i += 4) {
-        const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2])
+        const r = data[i] ?? 0
+        const g = data[i + 1] ?? 0
+        const b = data[i + 2] ?? 0
+        const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b)
         grayData[i / 4] = gray
       }
       
@@ -175,7 +178,7 @@ export default function NativeBarcodeScanner({ isOpen, onClose, onScan }: Native
   }, [addLog, checkImageQuality])
 
   // Escanear uma linha específica em busca de código de barras
-  const scanLineForBarcode = useCallback((grayData: Uint8Array, width: number, height: number, y: number): string | null => {
+  const scanLineForBarcode = useCallback((grayData: Uint8Array, width: number, _height: number, y: number): string | null => {
     try {
       // Extrair linha de varredura
       const scanLine = grayData.slice(y * width, (y + 1) * width)
@@ -225,12 +228,17 @@ export default function NativeBarcodeScanner({ isOpen, onClose, onScan }: Native
     const q1 = sorted[Math.floor(sorted.length * 0.25)]
     const q3 = sorted[Math.floor(sorted.length * 0.75)]
     
+    // Verificar se os valores existem
+    if (median === undefined || q1 === undefined || q3 === undefined) {
+      return 128 // Valor padrão
+    }
+    
     // Método Otsu simplificado para melhor separação
     const iqr = q3 - q1
     const threshold = median + (iqr * 0.1) // Ajuste mais conservador
     
     // Garantir que o threshold esteja dentro de limites razoáveis
-    return Math.max(q1 + 10, Math.min(q3 - 10, threshold))
+    return Math.max(q1 + 10, Math.min(q3 - 10, Math.floor(threshold)))
   }, [])
 
   // Detectar barras e espaços
@@ -455,8 +463,11 @@ export default function NativeBarcodeScanner({ isOpen, onClose, onScan }: Native
     for (let i = 0; i < normalized.length; i++) {
       const isBar = i % 2 === 0 // Começamos com uma barra
       const value = isBar ? 1 : 0
-      for (let j = 0; j < normalized[i]; j++) {
-        binary.push(value)
+      const normalizedValue = normalized[i]
+      if (normalizedValue !== undefined && normalizedValue > 0) {
+        for (let j = 0; j < normalizedValue; j++) {
+          binary.push(value)
+        }
       }
     }
     
@@ -604,7 +615,7 @@ export default function NativeBarcodeScanner({ isOpen, onClose, onScan }: Native
       if (backCamera) {
         setSelectedCameraId(backCamera.deviceId)
         addLog('info', `Câmera traseira selecionada: ${backCamera.label}`)
-      } else if (videoDevices.length > 0) {
+      } else if (videoDevices.length > 0 && videoDevices[0]) {
         setSelectedCameraId(videoDevices[0].deviceId)
         addLog('info', `Primeira câmera selecionada: ${videoDevices[0].label}`)
       }

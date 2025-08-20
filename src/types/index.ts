@@ -3,8 +3,13 @@
 export interface User {
   id: string;
   email: string;
-  name?: string;
+  name: string;
   role: UserRole;
+  isActive: boolean;
+  lastLogin?: Date;
+  avatar?: string;
+  phone?: string;
+  department?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -160,9 +165,32 @@ export interface CategoryFormData {
 
 export interface UserFormData {
   email: string;
-  name?: string;
-  password: string;
+  name: string;
+  password?: string;
   role: UserRole;
+  isActive: boolean;
+  phone?: string;
+  department?: string;
+}
+
+export interface UserFilters {
+  search?: string;
+  role?: UserRole;
+  isActive?: boolean;
+  department?: string;
+}
+
+export interface UserStats {
+  total: number;
+  active: number;
+  inactive: number;
+  byRole: Record<UserRole, number>;
+}
+
+export interface UserModalData {
+  mode: 'create' | 'edit' | 'view';
+  user?: User;
+  isOpen: boolean;
 }
 
 // Tipos para API responses

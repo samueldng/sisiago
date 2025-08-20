@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { jwtVerify } from 'jose';
-import { db } from '@/lib/supabase';
+import jwt from 'jsonwebtoken';
+import { supabase } from '@/lib/supabase';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -19,18 +19,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Verificar e decodificar o token usando jose (mesma lib do middleware)
-    const secret = new TextEncoder().encode(JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
-    
-    const decoded = {
-      userId: payload.userId as string,
-      email: payload.email as string,
-      role: payload.role as string
+    // Verificar e decodificar o token usando jsonwebtoken (mesma lib do login)
+    const decoded = jwt.verify(token, JWT_SECRET) as {
+      userId: string;
+      email: string;
+      role: string;
     };
 
     // Buscar usuário atualizado no banco
-    const { data: user, error } = await db.users.findById(decoded.userId);
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', decoded.userId)
+      .single();
 
     if (error || !user) {
       return NextResponse.json(
@@ -50,9 +51,9 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Erro na verificação de token:', error);
     
-    if (error.name === 'JWTExpired' || error.name === 'JWTInvalid') {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
       return NextResponse.json(
-        { error: 'Token inválido' },
+        { error: 'Token inválido ou expirado' },
         { status: 401 }
       );
     }

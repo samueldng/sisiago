@@ -144,6 +144,15 @@ export default function LoginPage() {
                 src="/logo.svg" 
                 alt="SISIAGO" 
                 className="h-12 w-auto sm:h-16"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  const fallback = document.createElement('div');
+                  fallback.className = 'h-12 w-12 sm:h-16 sm:w-16 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl';
+                  fallback.textContent = 'S';
+                  target.parentNode?.appendChild(fallback);
+                }}
+                onLoad={() => console.log('Logo carregada com sucesso')}
               />
             </div>
           </div>

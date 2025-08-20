@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
@@ -20,7 +20,11 @@ export async function POST(request: NextRequest) {
     const { email, password } = validatedData;
 
     // Buscar usuário no banco
-    const { data: user, error: userError } = await db.users.findByEmail(validatedData.email);
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', validatedData.email)
+      .single();
 
     if (userError && userError.code !== 'PGRST116') {
       console.error('Erro ao buscar usuário:', userError);

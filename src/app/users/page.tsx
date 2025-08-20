@@ -1,629 +1,692 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import ProtectedRoute from '@/components/ProtectedRoute';
-import { toast } from 'react-hot-toast';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { 
-  Users, 
-  Plus, 
-  Search, 
-  Edit, 
-  Trash2, 
-  Shield, 
-  ShieldCheck, 
-  Eye, 
-  EyeOff,
-  MoreVertical,
-  UserCheck,
-  UserX
-} from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
+import { Plus, Search, Filter, Edit, Trash2, Eye, Users, UserCheck, UserX, Shield, Settings, Crown, Loader2 } from 'lucide-react'
+import { z } from 'zod'
+import { toast } from 'sonner'
+import { useUsers, useUserStats, UserFilters, UserFormData } from '@/hooks/useUsers'
+import { User } from '@/lib/supabase'
 
-// Interfaces
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: 'admin' | 'manager' | 'user';
-  is_active?: boolean;
-  created_at: string;
-  updated_at: string;
-}
+// Schema de validação
+const userSchema = z.object({
+  name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
+  email: z.string().email('Email inválido'),
+  role: z.enum(['ADMIN', 'MANAGER', 'OPERATOR'], {
+    errorMap: () => ({ message: 'Selecione um papel válido' })
+  }),
+  is_active: z.boolean(),
+  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres').optional()
+})
 
-interface UserFormData {
-  email: string;
-  name: string;
-  password?: string;
-  role: 'admin' | 'manager' | 'user';
-}
+type FormData = z.infer<typeof userSchema>
 
-const roleLabels = {
-  admin: 'Administrador',
-  manager: 'Gerente',
-  user: 'Usuário'
-};
-
-const roleColors = {
-  admin: 'bg-red-100 text-red-800',
-  manager: 'bg-blue-100 text-blue-800',
-  user: 'bg-green-100 text-green-800'
-};
-
-export default function TestPage() {
-  const { user: currentUser } = useAuth();
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [formData, setFormData] = useState<UserFormData>({
-    email: '',
+export default function UsersPage() {
+  const { 
+    users, 
+    loading, 
+    error, 
+    total, 
+    fetchUsers, 
+    createUser, 
+    updateUser, 
+    deleteUser, 
+    getUserById 
+  } = useUsers()
+  
+  const { stats, loading: statsLoading, refetch: refetchStats } = useUserStats()
+  
+  const [searchTerm, setSearchTerm] = useState('')
+  const [roleFilter, setRoleFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<User | null>(null)
+  const [formData, setFormData] = useState<FormData>({
     name: '',
-    password: '',
-    role: 'user'
-  });
-  const [showPassword, setShowPassword] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+    email: '',
+    role: 'OPERATOR',
+    is_active: true,
+    password: ''
+  })
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
-  // Carregar usuários
-  const loadUsers = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/users');
-      const data = await response.json();
-      
-      if (response.ok) {
-        setUsers(data.users || []);
-      } else {
-        toast.error(data.error || 'Erro ao carregar usuários');
-      }
-    } catch (error) {
-      console.error('Erro ao carregar usuários:', error);
-      toast.error('Erro ao carregar usuários');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const itemsPerPage = 6
 
+  // Carregar usuários quando filtros mudarem
   useEffect(() => {
-    loadUsers();
-  }, []);
+    loadUsers()
+  }, [searchTerm, roleFilter, statusFilter, currentPage])
 
-  // Filtrar usuários
-  const filteredUsers = users.filter(user => 
-    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.name?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const loadUsers = async () => {
+    const filters: UserFilters = {
+      search: searchTerm || undefined,
+      role: roleFilter !== 'all' ? roleFilter : undefined,
+      status: statusFilter !== 'all' ? (statusFilter as 'active' | 'inactive') : undefined
+    }
+
+    const result = await fetchUsers(filters, currentPage, itemsPerPage)
+    setTotalPages(result.totalPages)
+  }
+
+  // Validar formulário
+  const validateForm = (data: FormData): boolean => {
+    try {
+      userSchema.parse(data)
+      setFormErrors({})
+      return true
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const errors: Record<string, string> = {}
+        error.errors.forEach((err) => {
+          if (err.path[0]) {
+            errors[err.path[0] as string] = err.message
+          }
+        })
+        setFormErrors(errors)
+      }
+      return false
+    }
+  }
 
   // Criar usuário
   const handleCreateUser = async () => {
-    if (!formData.email || !formData.name || !formData.password) {
-      toast.error('Preencha todos os campos obrigatórios');
-      return;
+    if (!validateForm(formData)) return
+
+    const result = await createUser(formData)
+    if (result) {
+      setIsCreateModalOpen(false)
+      resetForm()
+      loadUsers()
+      refetchStats()
     }
-
-    try {
-      setSubmitting(true);
-      const response = await fetch('/api/users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        toast.success('Usuário criado com sucesso!');
-        setIsCreateModalOpen(false);
-        setFormData({ email: '', name: '', password: '', role: 'user' });
-        loadUsers();
-      } else {
-        toast.error(data.error || 'Erro ao criar usuário');
-      }
-    } catch (error) {
-      console.error('Erro ao criar usuário:', error);
-      toast.error('Erro ao criar usuário');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  }
 
   // Editar usuário
   const handleEditUser = async () => {
-    if (!selectedUser || !formData.email || !formData.name) {
-      toast.error('Preencha todos os campos obrigatórios');
-      return;
+    if (!selectedUser || !validateForm(formData)) return
+
+    const { password, ...updateData } = formData
+    const dataToUpdate = password ? formData : updateData
+    
+    const result = await updateUser(selectedUser.id, dataToUpdate)
+    if (result) {
+      setIsEditModalOpen(false)
+      setSelectedUser(null)
+      resetForm()
+      loadUsers()
+      refetchStats()
     }
+  }
 
-    try {
-      setSubmitting(true);
-      const updateData = { ...formData };
-      if (!updateData.password) {
-        delete updateData.password;
-      }
-
-      const response = await fetch(`/api/users/${selectedUser.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updateData),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        toast.success('Usuário atualizado com sucesso!');
-        setIsEditModalOpen(false);
-        setSelectedUser(null);
-        setFormData({ email: '', name: '', password: '', role: 'user' });
-        loadUsers();
-      } else {
-        toast.error(data.error || 'Erro ao atualizar usuário');
-      }
-    } catch (error) {
-      console.error('Erro ao atualizar usuário:', error);
-      toast.error('Erro ao atualizar usuário');
-    } finally {
-      setSubmitting(false);
+  // Excluir usuário
+  const handleDeleteUser = async (userId: string) => {
+    const success = await deleteUser(userId)
+    if (success) {
+      loadUsers()
+      refetchStats()
     }
-  };
-
-  // Deletar usuário
-  const handleDeleteUser = async () => {
-    if (!selectedUser) return;
-
-    try {
-      setSubmitting(true);
-      const response = await fetch(`/api/users/${selectedUser.id}`, {
-        method: 'DELETE',
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        toast.success('Usuário deletado com sucesso!');
-        setIsDeleteModalOpen(false);
-        setSelectedUser(null);
-        loadUsers();
-      } else {
-        toast.error(data.error || 'Erro ao deletar usuário');
-      }
-    } catch (error) {
-      console.error('Erro ao deletar usuário:', error);
-      toast.error('Erro ao deletar usuário');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Alterar role do usuário
-  const handleChangeRole = async (userId: string, newRole: string) => {
-    try {
-      const response = await fetch(`/api/users/${userId}/role`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ role: newRole }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        toast.success('Role alterada com sucesso!');
-        loadUsers();
-      } else {
-        toast.error(data.error || 'Erro ao alterar role');
-      }
-    } catch (error) {
-      console.error('Erro ao alterar role:', error);
-      toast.error('Erro ao alterar role');
-    }
-  };
+  }
 
   // Abrir modal de edição
   const openEditModal = (user: User) => {
-    setSelectedUser(user);
+    setSelectedUser(user)
     setFormData({
-      email: user.email,
       name: user.name || '',
-      password: '',
-      role: user.role
-    });
-    setIsEditModalOpen(true);
-  };
+      email: user.email,
+      role: user.role as 'ADMIN' | 'MANAGER' | 'OPERATOR',
+      is_active: user.is_active,
+      password: ''
+    })
+    setFormErrors({})
+    setIsEditModalOpen(true)
+  }
 
-  // Abrir modal de exclusão
-  const openDeleteModal = (user: User) => {
-    setSelectedUser(user);
-    setIsDeleteModalOpen(true);
-  };
+  // Resetar formulário
+  const resetForm = () => {
+    setFormData({ 
+      name: '', 
+      email: '', 
+      role: 'OPERATOR', 
+      is_active: true, 
+      password: '' 
+    })
+    setFormErrors({})
+  }
+
+  // Mapear roles para exibição
+  const getRoleDisplay = (role: string) => {
+    switch (role) {
+      case 'ADMIN': return 'Administrador'
+      case 'MANAGER': return 'Gerente'
+      case 'OPERATOR': return 'Operador'
+      default: return role
+    }
+  }
+
+  // Ícones para roles
+  const getRoleIcon = (role: string) => {
+    switch (role) {
+      case 'ADMIN': return <Crown className="h-4 w-4" />
+      case 'MANAGER': return <Shield className="h-4 w-4" />
+      default: return <Settings className="h-4 w-4" />
+    }
+  }
+
+  // Cores para roles
+  const getRoleColor = (role: string) => {
+    switch (role) {
+      case 'ADMIN': return 'bg-red-100 text-red-800 border-red-200'
+      case 'MANAGER': return 'bg-blue-100 text-blue-800 border-blue-200'
+      default: 'bg-gray-100 text-gray-800 border-gray-200'
+    }
+  }
+
+  // Cores para status
+  const getStatusColor = (isActive: boolean) => {
+    return isActive 
+      ? 'bg-green-100 text-green-800 border-green-200'
+      : 'bg-red-100 text-red-800 border-red-200'
+  }
 
   return (
-    <ProtectedRoute requiredRole="admin">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-              <Users className="w-8 h-8 mr-3 text-blue-600" />
-              Gerenciamento de Usuários
-            </h1>
-            <p className="text-gray-600 mt-1">
-              Gerencie usuários do sistema, suas permissões e status
-            </p>
-          </div>
-          
-          <Button 
-            onClick={() => setIsCreateModalOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Novo Usuário
-          </Button>
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Gerenciamento de Usuários</h1>
+          <p className="text-gray-600 mt-1">Gerencie usuários, permissões e acessos do sistema</p>
         </div>
-
-        {/* Filtros */}
-        <div className="bg-white rounded-lg shadow-sm border p-4 mb-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Buscar por email ou nome..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Tabela de usuários */}
-        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-          {loading ? (
-            <div className="p-8 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="text-gray-500 mt-2">Carregando usuários...</p>
-            </div>
-          ) : filteredUsers.length === 0 ? (
-            <div className="p-8 text-center">
-              <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500">
-                {searchTerm ? 'Nenhum usuário encontrado com os filtros aplicados.' : 'Nenhum usuário cadastrado.'}
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Usuário
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Role
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Criado em
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Ações
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredUsers.map((user) => (
-                    <tr key={user.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {user.name || 'Nome não informado'}
-                          </div>
-                          <div className="text-sm text-gray-500">{user.email}</div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          roleColors[user.role]
-                        }`}>
-                          {user.role === 'admin' && <Shield className="w-3 h-3 mr-1" />}
-                          {user.role === 'manager' && <ShieldCheck className="w-3 h-3 mr-1" />}
-                          {roleLabels[user.role]}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          user.is_active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {user.is_active !== false ? (
-                            <><UserCheck className="w-3 h-3 mr-1" />Ativo</>
-                          ) : (
-                            <><UserX className="w-3 h-3 mr-1" />Inativo</>
-                          )}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {format(new Date(user.created_at), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEditModal(user)}>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Editar
-                            </DropdownMenuItem>
-                            {currentUser?.id !== user.id && (
-                              <>
-                                <DropdownMenuItem 
-                                  onClick={() => handleChangeRole(user.id, user.role === 'admin' ? 'user' : 'admin')}
-                                >
-                                  <Shield className="mr-2 h-4 w-4" />
-                                  {user.role === 'admin' ? 'Remover Admin' : 'Tornar Admin'}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem 
-                                  onClick={() => openDeleteModal(user)}
-                                  className="text-red-600"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Deletar
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Modal de Criação */}
+        
         <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogTrigger asChild>
+            <Button onClick={resetForm} className="bg-blue-600 hover:bg-blue-700">
+              <Plus className="h-4 w-4 mr-2" />
+              Novo Usuário
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Criar Novo Usuário</DialogTitle>
-              <DialogDescription>
-                Preencha os dados do novo usuário. Todos os campos são obrigatórios.
-              </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="create-email">Email</Label>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="name">Nome Completo</Label>
                 <Input
-                  id="create-email"
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Digite o nome completo"
+                  className={formErrors.name ? 'border-red-500' : ''}
+                />
+                {formErrors.name && <p className="text-sm text-red-500 mt-1">{formErrors.name}</p>}
+              </div>
+              
+              <div>
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
                   type="email"
                   value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="usuario@exemplo.com"
+                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="Digite o email"
+                  className={formErrors.email ? 'border-red-500' : ''}
                 />
+                {formErrors.email && <p className="text-sm text-red-500 mt-1">{formErrors.email}</p>}
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="create-name">Nome</Label>
+              
+              <div>
+                <Label htmlFor="password">Senha</Label>
                 <Input
-                  id="create-name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Nome completo"
+                  id="password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                  placeholder="Digite a senha"
+                  className={formErrors.password ? 'border-red-500' : ''}
                 />
+                {formErrors.password && <p className="text-sm text-red-500 mt-1">{formErrors.password}</p>}
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="create-password">Senha</Label>
-                <div className="relative">
-                  <Input
-                    id="create-password"
-                    type={showPassword ? 'text' : 'password'}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    placeholder="Mínimo 6 caracteres"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="create-role">Role</Label>
-                <Select value={formData.role} onValueChange={(value: 'admin' | 'manager' | 'user') => setFormData({ ...formData, role: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
+              
+              <div>
+                <Label htmlFor="role">Papel</Label>
+                <Select value={formData.role} onValueChange={(value: any) => setFormData(prev => ({ ...prev, role: value }))}>
+                  <SelectTrigger className={formErrors.role ? 'border-red-500' : ''}>
+                    <SelectValue placeholder="Selecione o papel" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="user">Usuário</SelectItem>
-                    <SelectItem value="manager">Gerente</SelectItem>
-                    <SelectItem value="admin">Administrador</SelectItem>
+                    <SelectItem value="OPERATOR">Operador</SelectItem>
+                    <SelectItem value="MANAGER">Gerente</SelectItem>
+                    <SelectItem value="ADMIN">Administrador</SelectItem>
                   </SelectContent>
                 </Select>
+                {formErrors.role && <p className="text-sm text-red-500 mt-1">{formErrors.role}</p>}
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  checked={formData.is_active}
+                  onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
+                  className="rounded"
+                />
+                <Label htmlFor="is_active">Usuário ativo</Label>
+              </div>
+              
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsCreateModalOpen(false)}
+                  disabled={loading}
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={handleCreateUser}
+                  disabled={loading}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Criando...
+                    </>
+                  ) : (
+                    'Criar Usuário'
+                  )}
+                </Button>
               </div>
             </div>
-            <DialogFooter>
-              <Button 
-                variant="outline" 
-                onClick={() => setIsCreateModalOpen(false)}
-                disabled={submitting}
-              >
-                Cancelar
-              </Button>
-              <Button 
-                onClick={handleCreateUser}
-                disabled={submitting}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                {submitting ? 'Criando...' : 'Criar Usuário'}
-              </Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
+       </div>
 
-        {/* Modal de Edição */}
-        <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Editar Usuário</DialogTitle>
-              <DialogDescription>
-                Atualize os dados do usuário. Deixe a senha em branco para não alterá-la.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="edit-email">Email</Label>
-                <Input
-                  id="edit-email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="usuario@exemplo.com"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-name">Nome</Label>
-                <Input
-                  id="edit-name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Nome completo"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-password">Nova Senha (opcional)</Label>
-                <div className="relative">
-                  <Input
-                    id="edit-password"
-                    type={showPassword ? 'text' : 'password'}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    placeholder="Deixe em branco para não alterar"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-role">Role</Label>
-                <Select value={formData.role} onValueChange={(value: 'admin' | 'manager' | 'user') => setFormData({ ...formData, role: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="user">Usuário</SelectItem>
-                    <SelectItem value="manager">Gerente</SelectItem>
-                    <SelectItem value="admin">Administrador</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button 
-                variant="outline" 
-                onClick={() => setIsEditModalOpen(false)}
-                disabled={submitting}
-              >
-                Cancelar
-              </Button>
-              <Button 
-                onClick={handleEditUser}
-                disabled={submitting}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                {submitting ? 'Salvando...' : 'Salvar Alterações'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+       {/* Estatísticas */}
+       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+         <Card>
+           <CardContent className="p-6">
+             <div className="flex items-center justify-between">
+               <div>
+                 <p className="text-sm font-medium text-gray-600">Total de Usuários</p>
+                 <p className="text-2xl font-bold text-gray-900">
+                   {statsLoading ? (
+                     <Loader2 className="h-6 w-6 animate-spin" />
+                   ) : (
+                     stats?.total || 0
+                   )}
+                 </p>
+               </div>
+               <Users className="h-8 w-8 text-blue-600" />
+             </div>
+           </CardContent>
+         </Card>
 
-        {/* Modal de Confirmação de Exclusão */}
-        <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Confirmar Exclusão</DialogTitle>
-              <DialogDescription>
-                Tem certeza que deseja deletar o usuário <strong>{selectedUser?.name}</strong>?
-                Esta ação não pode ser desfeita.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button 
-                variant="outline" 
-                onClick={() => setIsDeleteModalOpen(false)}
-                disabled={submitting}
-              >
-                Cancelar
-              </Button>
-              <Button 
-                variant="destructive"
-                onClick={handleDeleteUser}
-                disabled={submitting}
-              >
-                {submitting ? 'Deletando...' : 'Deletar Usuário'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-    </ProtectedRoute>
-  );
-}
+         <Card>
+           <CardContent className="p-6">
+             <div className="flex items-center justify-between">
+               <div>
+                 <p className="text-sm font-medium text-gray-600">Usuários Ativos</p>
+                 <p className="text-2xl font-bold text-green-600">
+                   {statsLoading ? (
+                     <Loader2 className="h-6 w-6 animate-spin" />
+                   ) : (
+                     stats?.active || 0
+                   )}
+                 </p>
+               </div>
+               <UserCheck className="h-8 w-8 text-green-600" />
+             </div>
+           </CardContent>
+         </Card>
+
+         <Card>
+           <CardContent className="p-6">
+             <div className="flex items-center justify-between">
+               <div>
+                 <p className="text-sm font-medium text-gray-600">Usuários Inativos</p>
+                 <p className="text-2xl font-bold text-red-600">
+                   {statsLoading ? (
+                     <Loader2 className="h-6 w-6 animate-spin" />
+                   ) : (
+                     stats?.inactive || 0
+                   )}
+                 </p>
+               </div>
+               <UserX className="h-8 w-8 text-red-600" />
+             </div>
+           </CardContent>
+         </Card>
+
+         <Card>
+           <CardContent className="p-6">
+             <div className="flex items-center justify-between">
+               <div>
+                 <p className="text-sm font-medium text-gray-600">Administradores</p>
+                 <p className="text-2xl font-bold text-purple-600">
+                   {statsLoading ? (
+                     <Loader2 className="h-6 w-6 animate-spin" />
+                   ) : (
+                     stats?.admins || 0
+                   )}
+                 </p>
+               </div>
+               <Crown className="h-8 w-8 text-purple-600" />
+             </div>
+           </CardContent>
+         </Card>
+       </div>
+
+       {/* Filtros */}
+       <Card>
+         <CardContent className="p-6">
+           <div className="flex flex-col lg:flex-row gap-4">
+             <div className="flex-1">
+               <div className="relative">
+                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                 <Input
+                   placeholder="Buscar por nome ou email..."
+                   value={searchTerm}
+                   onChange={(e) => setSearchTerm(e.target.value)}
+                   className="pl-10"
+                 />
+               </div>
+             </div>
+             
+             <div className="flex gap-2">
+               <Select value={roleFilter} onValueChange={setRoleFilter}>
+                 <SelectTrigger className="w-40">
+                   <SelectValue placeholder="Papel" />
+                 </SelectTrigger>
+                 <SelectContent>
+                   <SelectItem value="all">Todos os papéis</SelectItem>
+                   <SelectItem value="ADMIN">Administrador</SelectItem>
+                   <SelectItem value="MANAGER">Gerente</SelectItem>
+                   <SelectItem value="OPERATOR">Operador</SelectItem>
+                 </SelectContent>
+               </Select>
+               
+               <Select value={statusFilter} onValueChange={setStatusFilter}>
+                 <SelectTrigger className="w-32">
+                   <SelectValue placeholder="Status" />
+                 </SelectTrigger>
+                 <SelectContent>
+                   <SelectItem value="all">Todos</SelectItem>
+                   <SelectItem value="active">Ativo</SelectItem>
+                   <SelectItem value="inactive">Inativo</SelectItem>
+                 </SelectContent>
+               </Select>
+             </div>
+           </div>
+         </CardContent>
+       </Card>
+
+       {/* Lista de Usuários */}
+       {loading ? (
+         <div className="flex justify-center items-center py-12">
+           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+           <span className="ml-2 text-gray-600">Carregando usuários...</span>
+         </div>
+       ) : error ? (
+         <Card>
+           <CardContent className="p-6 text-center">
+             <p className="text-red-600">Erro ao carregar usuários: {error}</p>
+             <Button 
+               onClick={loadUsers} 
+               className="mt-4"
+               variant="outline"
+             >
+               Tentar novamente
+             </Button>
+           </CardContent>
+         </Card>
+       ) : users.length === 0 ? (
+         <Card>
+           <CardContent className="p-12 text-center">
+             <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+             <h3 className="text-lg font-medium text-gray-900 mb-2">Nenhum usuário encontrado</h3>
+             <p className="text-gray-600 mb-4">Não há usuários que correspondam aos filtros aplicados.</p>
+             <Button onClick={() => {
+               setSearchTerm('')
+               setRoleFilter('all')
+               setStatusFilter('all')
+             }}>
+               Limpar filtros
+             </Button>
+           </CardContent>
+         </Card>
+       ) : (
+         <>
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+             {users.map((user) => (
+               <Card key={user.id} className="hover:shadow-lg transition-shadow">
+                 <CardHeader className="pb-3">
+                   <div className="flex items-start justify-between">
+                     <div className="flex items-center space-x-3">
+                       <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                         <span className="text-blue-600 font-semibold text-sm">
+                           {user.name?.charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase()}
+                         </span>
+                       </div>
+                       <div>
+                         <h3 className="font-semibold text-gray-900">{user.name || 'Sem nome'}</h3>
+                         <p className="text-sm text-gray-600">{user.email}</p>
+                       </div>
+                     </div>
+                     
+                     <div className="flex space-x-1">
+                       <Button
+                         size="sm"
+                         variant="ghost"
+                         onClick={() => openEditModal(user)}
+                         className="h-8 w-8 p-0"
+                       >
+                         <Edit className="h-4 w-4" />
+                       </Button>
+                       
+                       <AlertDialog>
+                         <AlertDialogTrigger asChild>
+                           <Button
+                             size="sm"
+                             variant="ghost"
+                             className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                           >
+                             <Trash2 className="h-4 w-4" />
+                           </Button>
+                         </AlertDialogTrigger>
+                         <AlertDialogContent>
+                           <AlertDialogHeader>
+                             <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+                             <AlertDialogDescription>
+                               Tem certeza que deseja excluir o usuário <strong>{user.name || user.email}</strong>? 
+                               Esta ação não pode ser desfeita.
+                             </AlertDialogDescription>
+                           </AlertDialogHeader>
+                           <AlertDialogFooter>
+                             <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                             <AlertDialogAction
+                               onClick={() => handleDeleteUser(user.id)}
+                               className="bg-red-600 hover:bg-red-700"
+                             >
+                               Excluir
+                             </AlertDialogAction>
+                           </AlertDialogFooter>
+                         </AlertDialogContent>
+                       </AlertDialog>
+                     </div>
+                   </div>
+                 </CardHeader>
+                 
+                 <CardContent className="pt-0">
+                   <div className="space-y-3">
+                     <div className="flex items-center justify-between">
+                       <div className="flex items-center space-x-2">
+                         {getRoleIcon(user.role)}
+                         <Badge className={getRoleColor(user.role)}>
+                           {getRoleDisplay(user.role)}
+                         </Badge>
+                       </div>
+                       
+                       <Badge className={getStatusColor(user.is_active)}>
+                         {user.is_active ? 'Ativo' : 'Inativo'}
+                       </Badge>
+                     </div>
+                     
+                     <div className="text-sm text-gray-600">
+                       <p>Criado em: {new Date(user.created_at).toLocaleDateString('pt-BR')}</p>
+                       {user.updated_at && (
+                         <p>Atualizado: {new Date(user.updated_at).toLocaleDateString('pt-BR')}</p>
+                       )}
+                     </div>
+                   </div>
+                 </CardContent>
+               </Card>
+             ))}
+           </div>
+
+           {/* Paginação */}
+           {totalPages > 1 && (
+             <div className="flex justify-center items-center space-x-2">
+               <Button
+                 variant="outline"
+                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                 disabled={currentPage === 1}
+               >
+                 Anterior
+               </Button>
+               
+               <div className="flex space-x-1">
+                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                   <Button
+                     key={page}
+                     variant={currentPage === page ? "default" : "outline"}
+                     onClick={() => setCurrentPage(page)}
+                     className="w-10"
+                   >
+                     {page}
+                   </Button>
+                 ))}
+               </div>
+               
+               <Button
+                 variant="outline"
+                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                 disabled={currentPage === totalPages}
+               >
+                 Próximo
+               </Button>
+             </div>
+           )}
+         </>
+       )}
+
+       {/* Modal de Edição */}
+       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+         <DialogContent className="sm:max-w-md">
+           <DialogHeader>
+             <DialogTitle>Editar Usuário</DialogTitle>
+           </DialogHeader>
+           <div className="space-y-4">
+             <div>
+               <Label htmlFor="edit-name">Nome Completo</Label>
+               <Input
+                 id="edit-name"
+                 value={formData.name}
+                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                 placeholder="Digite o nome completo"
+                 className={formErrors.name ? 'border-red-500' : ''}
+               />
+               {formErrors.name && <p className="text-sm text-red-500 mt-1">{formErrors.name}</p>}
+             </div>
+             
+             <div>
+               <Label htmlFor="edit-email">Email</Label>
+               <Input
+                 id="edit-email"
+                 type="email"
+                 value={formData.email}
+                 onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                 placeholder="Digite o email"
+                 className={formErrors.email ? 'border-red-500' : ''}
+               />
+               {formErrors.email && <p className="text-sm text-red-500 mt-1">{formErrors.email}</p>}
+             </div>
+             
+             <div>
+               <Label htmlFor="edit-password">Nova Senha (opcional)</Label>
+               <Input
+                 id="edit-password"
+                 type="password"
+                 value={formData.password}
+                 onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                 placeholder="Digite a nova senha (deixe vazio para manter)"
+                 className={formErrors.password ? 'border-red-500' : ''}
+               />
+               {formErrors.password && <p className="text-sm text-red-500 mt-1">{formErrors.password}</p>}
+             </div>
+             
+             <div>
+               <Label htmlFor="edit-role">Papel</Label>
+               <Select value={formData.role} onValueChange={(value: any) => setFormData(prev => ({ ...prev, role: value }))}>
+                 <SelectTrigger className={formErrors.role ? 'border-red-500' : ''}>
+                   <SelectValue placeholder="Selecione o papel" />
+                 </SelectTrigger>
+                 <SelectContent>
+                   <SelectItem value="OPERATOR">Operador</SelectItem>
+                   <SelectItem value="MANAGER">Gerente</SelectItem>
+                   <SelectItem value="ADMIN">Administrador</SelectItem>
+                 </SelectContent>
+               </Select>
+               {formErrors.role && <p className="text-sm text-red-500 mt-1">{formErrors.role}</p>}
+             </div>
+             
+             <div className="flex items-center space-x-2">
+               <input
+                 type="checkbox"
+                 id="edit-is_active"
+                 checked={formData.is_active}
+                 onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
+                 className="rounded"
+               />
+               <Label htmlFor="edit-is_active">Usuário ativo</Label>
+             </div>
+             
+             <div className="flex justify-end space-x-2 pt-4">
+               <Button 
+                 variant="outline" 
+                 onClick={() => setIsEditModalOpen(false)}
+                 disabled={loading}
+               >
+                 Cancelar
+               </Button>
+               <Button 
+                 onClick={handleEditUser}
+                 disabled={loading}
+                 className="bg-blue-600 hover:bg-blue-700"
+               >
+                 {loading ? (
+                   <>
+                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                     Salvando...
+                   </>
+                 ) : (
+                   'Salvar Alterações'
+                 )}
+               </Button>
+             </div>
+           </div>
+         </DialogContent>
+       </Dialog>
+     </div>
+   )
+ }

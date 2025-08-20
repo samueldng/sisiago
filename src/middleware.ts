@@ -1,176 +1,72 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
+import { UserRole, ROLE_PERMISSIONS } from './lib/permissions';
 
-// Usar jose em vez de jsonwebtoken para compatibilidade com Edge Runtime
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'your-secret-key'
+);
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-
-// Rotas que não precisam de autenticação
-const publicPaths = [
-  '/api/auth/login',
-  '/api/auth/logout',
-  '/login',
-  '/_next',
-  '/favicon.ico',
-  '/logo.svg',
-  '/manifest.json'
-];
-
-// Rotas que todos os usuários autenticados podem acessar
-const authenticatedUserPaths = [
-  '/api/auth/verify',      // Verificação de autenticação
-  '/api/products/expired', // Produtos vencidos - usado no dashboard
-  '/api/dashboard/stats'   // Estatísticas do dashboard
-];
-
-// Rotas que precisam de role específica
-const adminOnlyPaths = [
-  '/api/users',
-  '/api/audit-logs'
-];
-
-const managerPaths = [
-  '/api/products',
-  '/api/categories',
-  '/api/sales'
-];
+// Rotas protegidas por role
+const PROTECTED_ROUTES = {
+  '/users': ['admin', 'manager'],
+  '/audit': ['admin'],
+  '/system': ['admin'],
+  '/reports': ['admin', 'manager'],
+} as const;
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // Verificar se é uma rota pública
-  const isPublicPath = publicPaths.some(path => 
-    pathname.startsWith(path)
-  );
-
-  // Obter token do cookie para verificar se usuário está autenticado
-  const token = request.cookies.get('auth-token')?.value;
-
-  // Se é a página de login e o usuário já está autenticado, redirecionar para home
-  if (pathname === '/login' && token) {
-    try {
-      const secret = new TextEncoder().encode(JWT_SECRET);
-      await jwtVerify(token, secret);
-      // Token válido, redirecionar usuário autenticado para home
-      return NextResponse.redirect(new URL('/', request.url));
-    } catch (error) {
-      // Token inválido, permitir acesso à página de login
-      return NextResponse.next();
-    }
-  }
-
-  if (isPublicPath) {
+  // Rotas que não precisam de autenticação
+  const publicPaths = ['/login', '/api/auth/login'];
+  
+  if (publicPaths.includes(request.nextUrl.pathname)) {
     return NextResponse.next();
   }
 
-  // Token já foi obtido acima
+  const token = request.cookies.get('auth-token')?.value;
 
   if (!token) {
-    // Se é uma página, redirecionar para login
-    if (!pathname.startsWith('/api/')) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
-    // Se é API, retornar 401
-    return NextResponse.json(
-      { error: 'Token de autenticação necessário' },
-      { status: 401 }
-    );
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
   try {
-    // Verificar e decodificar o token
-    console.log('🔍 Middleware - Token recebido:', token ? 'Presente' : 'Ausente');
-    console.log('🔑 JWT_SECRET:', JWT_SECRET ? 'Configurado' : 'Não configurado');
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const userRole = payload.role as UserRole;
+    const userId = payload.userId as string;
     
-    const secret = new TextEncoder().encode(JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
-    
-    const decoded = {
-      userId: payload.userId as string,
-      email: payload.email as string,
-      role: payload.role as string
-    };
-    
-    console.log('✅ Token decodificado:', { userId: decoded.userId, role: decoded.role });
-
-    // Verificar se é uma rota que todos os usuários autenticados podem acessar
-    const isAuthenticatedUserPath = authenticatedUserPaths.some(path => 
-      pathname.startsWith(path)
+    // Verifica se o usuário tem permissão para acessar a rota
+    const pathname = request.nextUrl.pathname;
+    const protectedRoute = Object.keys(PROTECTED_ROUTES).find(route => 
+      pathname.startsWith(route)
     );
-
-    // Se é uma rota para usuários autenticados, permitir acesso
-    if (isAuthenticatedUserPath) {
-      // Continuar para adicionar headers e permitir acesso
-    } else {
-      // Verificar permissões para rotas específicas
-      const isAdminOnlyPath = adminOnlyPaths.some(path => 
-        pathname.startsWith(path)
-      );
-      
-      const isManagerPath = managerPaths.some(path => 
-        pathname.startsWith(path)
-      );
-
-      // Se é rota apenas para admin e usuário não é admin
-      if (isAdminOnlyPath && decoded.role !== 'admin') {
-        if (!pathname.startsWith('/api/')) {
-          return NextResponse.redirect(new URL('/', request.url));
-        }
-        return NextResponse.json(
-          { error: 'Acesso negado. Apenas administradores.' },
-          { status: 403 }
-        );
-      }
-
-      // Se é rota para manager e usuário não é manager nem admin
-      if (isManagerPath && !['admin', 'manager'].includes(decoded.role)) {
-        if (!pathname.startsWith('/api/')) {
-          return NextResponse.redirect(new URL('/', request.url));
-        }
-        return NextResponse.json(
-          { error: 'Acesso negado. Permissão insuficiente.' },
-          { status: 403 }
-        );
+    
+    if (protectedRoute) {
+      const allowedRoles = PROTECTED_ROUTES[protectedRoute as keyof typeof PROTECTED_ROUTES];
+      if (!allowedRoles.includes(userRole)) {
+        // Redireciona para página de acesso negado ou dashboard
+        return NextResponse.redirect(new URL('/dashboard?error=access_denied', request.url));
       }
     }
-
-    // Adicionar informações do usuário aos headers para as APIs
+    
+    // Adiciona informações do usuário aos headers
     const requestHeaders = new Headers(request.headers);
-    requestHeaders.set('x-user-id', decoded.userId);
-    requestHeaders.set('x-user-email', decoded.email);
-    requestHeaders.set('x-user-role', decoded.role);
-
-    const response = NextResponse.next({
+    requestHeaders.set('x-user-id', userId);
+    requestHeaders.set('x-user-role', userRole);
+    requestHeaders.set('x-user-permissions', JSON.stringify(ROLE_PERMISSIONS[userRole] || []));
+    
+    return NextResponse.next({
       request: {
         headers: requestHeaders,
       },
     });
-
-    return response;
-
   } catch (error) {
-    console.error('Erro na verificação do token:', error);
-    
-    // Token inválido
-    if (!pathname.startsWith('/api/')) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
-    
-    return NextResponse.json(
-      { error: 'Token inválido' },
-      { status: 401 }
-    );
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
     '/((?!_next/static|_next/image|favicon.ico).*)',
+    '/api/((?!auth/login).*)',
   ],
 };

@@ -13,14 +13,14 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 0 // Expira imediatamente
+      maxAge: 0, // Expirar imediatamente
+      path: '/'
     });
 
     return response;
 
   } catch (error) {
     console.error('Erro no logout:', error);
-    
     return NextResponse.json(
       { error: 'Erro interno do servidor' },
       { status: 500 }

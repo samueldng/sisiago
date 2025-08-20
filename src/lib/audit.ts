@@ -153,45 +153,271 @@ export async function createAuditLog(
   }
 }
 
-// Função helper para buscar logs
+// Interface para resultado paginado
+export interface PaginatedAuditLogs {
+  logs: AuditLog[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
+// Função helper para buscar logs com paginação e filtros avançados
 export async function getAuditLogs(filters?: {
   tableName?: string;
   operation?: string;
   userId?: string;
+  startDate?: string;
+  endDate?: string;
   limit?: number;
-}): Promise<AuditLog[]> {
+  offset?: number;
+}): Promise<PaginatedAuditLogs> {
   try {
-    let query = supabase
-      .from('audit_logs')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const limit = filters?.limit || 25;
+    const offset = filters?.offset || 0;
 
+    // Query para contar total
+    let countQuery = supabase
+      .from('audit_logs')
+      .select('*', { count: 'exact', head: true });
+
+    // Query para buscar dados
+    let dataQuery = supabase
+      .from('audit_logs')
+      .select(`
+        *,
+        users!inner(
+          name,
+          email,
+          role
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    // Aplicar filtros em ambas as queries
     if (filters?.tableName) {
-      query = query.eq('table_name', filters.tableName);
+      countQuery = countQuery.eq('table_name', filters.tableName);
+      dataQuery = dataQuery.eq('table_name', filters.tableName);
     }
 
     if (filters?.operation) {
-      query = query.eq('operation', filters.operation);
+      countQuery = countQuery.eq('operation', filters.operation);
+      dataQuery = dataQuery.eq('operation', filters.operation);
     }
 
     if (filters?.userId) {
-      query = query.eq('user_id', filters.userId);
+      countQuery = countQuery.eq('user_id', filters.userId);
+      dataQuery = dataQuery.eq('user_id', filters.userId);
     }
 
-    if (filters?.limit) {
-      query = query.limit(filters.limit);
+    if (filters?.startDate) {
+      const startDateTime = `${filters.startDate}T00:00:00.000Z`;
+      countQuery = countQuery.gte('created_at', startDateTime);
+      dataQuery = dataQuery.gte('created_at', startDateTime);
+    }
+
+    if (filters?.endDate) {
+      const endDateTime = `${filters.endDate}T23:59:59.999Z`;
+      countQuery = countQuery.lte('created_at', endDateTime);
+      dataQuery = dataQuery.lte('created_at', endDateTime);
+    }
+
+    // Executar queries
+    const [{ count }, { data, error }] = await Promise.all([
+      countQuery,
+      dataQuery
+    ]);
+
+    if (error) {
+      console.error('Erro ao buscar logs de auditoria:', error);
+      return {
+        logs: [],
+        pagination: {
+          total: 0,
+          limit,
+          offset,
+          hasMore: false
+        }
+      };
+    }
+
+    const total = count || 0;
+    const hasMore = offset + limit < total;
+
+    // Transformar dados para incluir informações do usuário
+    const transformedLogs = (data || []).map(log => ({
+      ...log,
+      user_name: log.users?.name || 'Sistema',
+      user_email: log.users?.email || '',
+      user_role: log.users?.role || 'system'
+    }));
+
+    return {
+      logs: transformedLogs,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore
+      }
+    };
+  } catch (error) {
+    console.error('Erro ao buscar logs de auditoria:', error);
+    return {
+      logs: [],
+      pagination: {
+        total: 0,
+        limit: filters?.limit || 25,
+        offset: filters?.offset || 0,
+        hasMore: false
+      }
+    };
+  }
+}
+
+// Função para exportar logs de auditoria
+export async function exportAuditLogs(
+  filters?: {
+    tableName?: string;
+    operation?: string;
+    userId?: string;
+    startDate?: string;
+    endDate?: string;
+  },
+  format: 'csv' | 'json' = 'csv'
+): Promise<string> {
+  try {
+    // Buscar todos os logs sem paginação para exportação
+    const result = await getAuditLogs({ ...filters, limit: 10000, offset: 0 });
+    const logs = result.logs;
+
+    if (format === 'json') {
+      return JSON.stringify(logs, null, 2);
+    }
+
+    // Gerar CSV
+    const headers = [
+      'ID',
+      'Data/Hora',
+      'Usuário',
+      'Email',
+      'Role',
+      'Tabela',
+      'Operação',
+      'ID do Registro',
+      'IP',
+      'User Agent',
+      'Valores Antigos',
+      'Valores Novos'
+    ];
+
+    const csvRows = [headers.join(',')];
+
+    logs.forEach(log => {
+      const row = [
+        log.id,
+        new Date(log.created_at).toLocaleString('pt-BR'),
+        `"${log.user_name || 'Sistema'}"`,
+        `"${log.user_email || ''}"`,
+        log.user_role || 'system',
+        log.table_name,
+        log.operation,
+        log.record_id,
+        log.ip_address || '',
+        `"${log.user_agent || ''}"`,
+        `"${log.old_values ? JSON.stringify(log.old_values).replace(/"/g, '""') : ''}"`,
+        `"${log.new_values ? JSON.stringify(log.new_values).replace(/"/g, '""') : ''}"`
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    return csvRows.join('\n');
+  } catch (error) {
+    console.error('Erro ao exportar logs de auditoria:', error);
+    throw new Error('Erro ao exportar logs de auditoria');
+  }
+}
+
+// Função para obter estatísticas de auditoria
+export async function getAuditStats(filters?: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<{
+  totalLogs: number;
+  byOperation: Record<string, number>;
+  byTable: Record<string, number>;
+  byUser: Record<string, number>;
+  recentActivity: AuditLog[];
+}> {
+  try {
+    let query = supabase
+      .from('audit_logs')
+      .select(`
+        *,
+        users!inner(
+          name,
+          email,
+          role
+        )
+      `);
+
+    if (filters?.startDate) {
+      const startDateTime = `${filters.startDate}T00:00:00.000Z`;
+      query = query.gte('created_at', startDateTime);
+    }
+
+    if (filters?.endDate) {
+      const endDateTime = `${filters.endDate}T23:59:59.999Z`;
+      query = query.lte('created_at', endDateTime);
     }
 
     const { data, error } = await query;
 
     if (error) {
-      console.error('Erro ao buscar logs de auditoria:', error);
-      return [];
+      console.error('Erro ao buscar estatísticas de auditoria:', error);
+      throw error;
     }
 
-    return data || [];
+    const logs = data || [];
+    const stats = {
+      totalLogs: logs.length,
+      byOperation: {} as Record<string, number>,
+      byTable: {} as Record<string, number>,
+      byUser: {} as Record<string, number>,
+      recentActivity: logs
+        .slice(0, 10)
+        .map(log => ({
+          ...log,
+          user_name: log.users?.name || 'Sistema',
+          user_email: log.users?.email || '',
+          user_role: log.users?.role || 'system'
+        }))
+    };
+
+    logs.forEach(log => {
+      // Por operação
+      stats.byOperation[log.operation] = (stats.byOperation[log.operation] || 0) + 1;
+      
+      // Por tabela
+      stats.byTable[log.table_name] = (stats.byTable[log.table_name] || 0) + 1;
+      
+      // Por usuário
+      const userName = log.users?.name || 'Sistema';
+      stats.byUser[userName] = (stats.byUser[userName] || 0) + 1;
+    });
+
+    return stats;
   } catch (error) {
-    console.error('Erro ao buscar logs de auditoria:', error);
-    return [];
+    console.error('Erro ao buscar estatísticas de auditoria:', error);
+    return {
+      totalLogs: 0,
+      byOperation: {},
+      byTable: {},
+      byUser: {},
+      recentActivity: []
+    };
   }
 }
