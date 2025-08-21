@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { createAuditLog } from '@/lib/supabase';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
@@ -35,6 +36,23 @@ export async function POST(request: NextRequest) {
     }
 
     if (!user) {
+      // Log de tentativa de login falhada - usuário não encontrado
+      try {
+        await createAuditLog('auth_attempts', null, 'LOGIN_FAILED', {
+          newValues: {
+            email: validatedData.email,
+            reason: 'user_not_found',
+            ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+            user_agent: request.headers.get('user-agent') || 'unknown',
+            timestamp: new Date().toISOString()
+          },
+          ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+          userAgent: request.headers.get('user-agent') || 'unknown'
+        });
+      } catch (auditError) {
+        console.error('Erro ao registrar log de auditoria:', auditError);
+      }
+      
       return NextResponse.json(
         { error: 'Credenciais inválidas' },
         { status: 401 }
@@ -45,6 +63,26 @@ export async function POST(request: NextRequest) {
     const isPasswordValid = await bcrypt.compare(password, user.password);
     
     if (!isPasswordValid) {
+      // Log de tentativa de login falhada - senha incorreta
+      try {
+        await createAuditLog('auth_attempts', user.id, 'LOGIN_FAILED', {
+          newValues: {
+            email: validatedData.email,
+            user_id: user.id,
+            reason: 'invalid_password',
+            ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+            user_agent: request.headers.get('user-agent') || 'unknown',
+            timestamp: new Date().toISOString()
+          },
+          userId: user.id,
+          userEmail: user.email,
+          ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+          userAgent: request.headers.get('user-agent') || 'unknown'
+        });
+      } catch (auditError) {
+        console.error('Erro ao registrar log de auditoria:', auditError);
+      }
+      
       return NextResponse.json(
         { error: 'Credenciais inválidas' },
         { status: 401 }
@@ -61,6 +99,27 @@ export async function POST(request: NextRequest) {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
+
+    // Log de login bem-sucedido
+    try {
+      await createAuditLog('auth_attempts', user.id, 'LOGIN_SUCCESS', {
+        newValues: {
+          email: user.email,
+          user_id: user.id,
+          user_name: user.name,
+          user_role: user.role,
+          ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+          user_agent: request.headers.get('user-agent') || 'unknown',
+          timestamp: new Date().toISOString()
+        },
+        userId: user.id,
+        userEmail: user.email,
+        ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        userAgent: request.headers.get('user-agent') || 'unknown'
+      });
+    } catch (auditError) {
+      console.error('Erro ao registrar log de auditoria:', auditError);
+    }
 
     // Remover senha da resposta
     const { password: _, ...userWithoutPassword } = user;

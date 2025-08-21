@@ -4,6 +4,10 @@ import { z } from 'zod'
 import { triggerDashboardUpdateServer } from '@/utils/dashboardUpdater'
 import { createAuditLog } from '@/lib/supabase'
 
+// Forçar revalidação a cada requisição
+export const revalidate = 0
+export const dynamic = 'force-dynamic'
+
 // Schema de validação para criação de venda
 const createSaleSchema = z.object({
   items: z.array(z.object({
@@ -93,7 +97,7 @@ export async function GET(request: NextRequest) {
     
     const total = count || 0
     
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       sales: sales || [],
       data: sales,
@@ -104,6 +108,14 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(total / limit)
       }
     })
+    
+    // Headers para evitar cache
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+    response.headers.set('Pragma', 'no-cache')
+    response.headers.set('Expires', '0')
+    response.headers.set('Surrogate-Control', 'no-store')
+    
+    return response
   } catch (error) {
     console.error('Erro ao buscar vendas:', error)
     return NextResponse.json(

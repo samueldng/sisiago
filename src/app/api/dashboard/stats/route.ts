@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
+// Forçar revalidação a cada requisição
+export const revalidate = 0
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     // Data de hoje (início e fim do dia)
@@ -106,7 +110,15 @@ export async function GET(request: NextRequest) {
       lastUpdate: new Date().toISOString()
     }
 
-    return NextResponse.json(stats)
+    const response = NextResponse.json(stats)
+    
+    // Headers para evitar cache
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+    response.headers.set('Pragma', 'no-cache')
+    response.headers.set('Expires', '0')
+    response.headers.set('Surrogate-Control', 'no-store')
+    
+    return response
   } catch (error) {
     console.error('Erro ao buscar estatísticas do dashboard:', error)
     return NextResponse.json(

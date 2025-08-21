@@ -42,17 +42,25 @@ export default function LoginPage() {
   const [showPWAPrompt, setShowPWAPrompt] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [logoLoaded, setLogoLoaded] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
-  // Redirecionar se já estiver autenticado
+  // Garantir que o componente está montado no cliente
   useEffect(() => {
-    if (!authLoading && isAuthenticated) {
+    setIsMounted(true);
+  }, []);
+
+  // Redirecionar se já estiver autenticado (apenas no cliente)
+  useEffect(() => {
+    if (isMounted && !authLoading && isAuthenticated) {
       console.log('✅ LoginPage: Usuário já autenticado, redirecionando para /');
       router.replace('/');
     }
-  }, [isAuthenticated, authLoading, router]);
+  }, [isAuthenticated, authLoading, router, isMounted]);
 
-  // Detectar se pode instalar como PWA
+  // Detectar se pode instalar como PWA (apenas no cliente)
   useEffect(() => {
+    if (!isMounted) return;
+    
     const handleBeforeInstallPrompt = (e: BeforeInstallPromptEvent) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -63,7 +71,7 @@ export default function LoginPage() {
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt as EventListener);
     };
-  }, []);
+  }, [isMounted]);
 
   const handleInputChange = (field: keyof LoginForm, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -98,19 +106,21 @@ export default function LoginPage() {
 
   const installPWA = async () => {
     if (deferredPrompt) {
-      await deferredPrompt.prompt();
+      console.log('📱 PWA: Iniciando instalação');
+      deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
-      console.log('✅ PWA install prompt was:', outcome);
+      console.log(`📱 PWA: Resultado da instalação: ${outcome}`);
       setDeferredPrompt(null);
     }
     setShowPWAPrompt(false);
-    console.log('🔄 LoginPage: PWA instalado, redirecionando para /');
+    console.log('🔄 LoginPage: Redirecionando para /');
     router.replace('/');
   };
 
   const skipPWA = () => {
+    console.log('⏭️ PWA: Instalação ignorada');
     setShowPWAPrompt(false);
-    console.log('🔄 LoginPage: PWA ignorado, redirecionando para /');
+    console.log('🔄 LoginPage: Redirecionando para /');
     router.replace('/');
   };
 
@@ -149,13 +159,13 @@ export default function LoginPage() {
     }
   };
 
-  // Mostrar loading enquanto verifica autenticação
-  if (authLoading) {
+  // Mostrar loading enquanto verifica autenticação ou não está montado
+  if (!isMounted || authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="flex flex-col items-center space-y-4">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-          <p className="text-gray-600">Verificando autenticação...</p>
+          <p className="text-gray-600">{!isMounted ? 'Carregando...' : 'Verificando autenticação...'}</p>
         </div>
       </div>
     );
@@ -172,12 +182,14 @@ export default function LoginPage() {
                 alt="SISIAGO" 
                 className="h-12 w-auto sm:h-16"
                 onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                  const fallback = document.createElement('div');
-                  fallback.className = 'h-12 w-12 sm:h-16 sm:w-16 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl';
-                  fallback.textContent = 'S';
-                  target.parentNode?.appendChild(fallback);
+                  if (isMounted) {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const fallback = document.createElement('div');
+                    fallback.className = 'h-12 w-12 sm:h-16 sm:w-16 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl';
+                    fallback.textContent = 'S';
+                    target.parentNode?.appendChild(fallback);
+                  }
                 }}
                 onLoad={() => console.log('Logo carregada com sucesso')}
               />
@@ -301,7 +313,7 @@ export default function LoginPage() {
               <CardContent className="pt-0">
                 <div className="space-y-3">
                   <Button
-                    onClick={handleInstallPWA}
+                    onClick={installPWA}
                     className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
                   >
                     <Download className="h-4 w-4 mr-2" />

@@ -25,12 +25,40 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('start_date');
     const endDate = searchParams.get('end_date');
 
+    // Buscar estatísticas completas (incluindo horárias, diárias e métricas de risco)
     const stats = await getAuditStats({
       startDate: startDate || undefined,
       endDate: endDate || undefined
     });
 
-    return NextResponse.json(stats);
+    // Transformar os dados para o formato esperado pelo frontend
+    const transformedStats = {
+      totalLogs: stats.totalLogs,
+      operationStats: {
+        INSERT: stats.byOperation?.INSERT || 0,
+        UPDATE: stats.byOperation?.UPDATE || 0,
+        DELETE: stats.byOperation?.DELETE || 0
+      },
+      tableStats: Object.entries(stats.byTable || {}).map(([table_name, count]) => ({
+        table_name,
+        count: count as number
+      })),
+      userStats: Object.entries(stats.byUser || {}).map(([user_name, count]) => ({
+        user_id: user_name,
+        user_email: user_name,
+        count: count as number
+      })),
+      hourlyStats: stats.hourlyStats || [],
+      dailyStats: stats.dailyStats || [],
+      riskMetrics: stats.riskMetrics || {
+        suspiciousActivities: 0,
+        failedLogins: 0,
+        unusualPatterns: 0,
+        riskScore: 0
+      }
+    };
+
+    return NextResponse.json(transformedStats);
   } catch (error) {
     console.error('Erro ao buscar estatísticas de auditoria:', error);
     return NextResponse.json(
