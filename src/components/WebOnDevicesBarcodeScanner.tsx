@@ -69,11 +69,15 @@ export default function WebOnDevicesBarcodeScanner({
     
     let sum = 0
     for (let i = 0; i < 12; i++) {
-      sum += digits[i] * (i % 2 === 0 ? 1 : 3)
+      const digit = digits[i]
+      if (digit === undefined) return false
+      sum += digit * (i % 2 === 0 ? 1 : 3)
     }
     
     const checkDigit = (10 - (sum % 10)) % 10
-    return checkDigit === digits[12]
+    const lastDigit = digits[12]
+    if (lastDigit === undefined) return false
+    return checkDigit === lastDigit
   }
 
   // Função para decodificar EAN-13
@@ -133,6 +137,7 @@ export default function WebOnDevicesBarcodeScanner({
     let patternString = ''
     for (let i = 0; i < 6; i++) {
       const pattern = leftPatterns[i]
+      if (!pattern) return null
       if (EAN_PATTERNS.L.includes(pattern)) {
         patternString += 'L'
       } else {
@@ -162,9 +167,9 @@ export default function WebOnDevicesBarcodeScanner({
     
     for (let x = startX; x < endX; x++) {
       const index = (scanLine * width + x) * 4
-      const r = data[index]
-      const g = data[index + 1]
-      const b = data[index + 2]
+      const r = data[index] ?? 0
+      const g = data[index + 1] ?? 0
+      const b = data[index + 2] ?? 0
       
       // Converter para escala de cinza
       const gray = (r + g + b) / 3
@@ -210,18 +215,21 @@ export default function WebOnDevicesBarcodeScanner({
         
         // Feedback sonoro
         try {
-          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-          const oscillator = audioContext.createOscillator()
-          const gainNode = audioContext.createGain()
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+          if (AudioContextClass) {
+            const audioContext = new AudioContextClass()
+            const oscillator = audioContext.createOscillator()
+            const gainNode = audioContext.createGain()
           
-          oscillator.connect(gainNode)
-          gainNode.connect(audioContext.destination)
-          
-          oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
-          gainNode.gain.setValueAtTime(0.1, audioContext.currentTime)
-          
-          oscillator.start()
-          oscillator.stop(audioContext.currentTime + 0.1)
+            oscillator.connect(gainNode)
+            gainNode.connect(audioContext.destination)
+            
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime)
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime)
+            
+            oscillator.start()
+            oscillator.stop(audioContext.currentTime + 0.1)
+          }
         } catch (e) {
           // Ignorar erro de áudio
         }
@@ -233,6 +241,10 @@ export default function WebOnDevicesBarcodeScanner({
   const startCamera = useCallback(async () => {
     try {
       setError(null)
+      
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Câmera não suportada neste navegador')
+      }
       
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -271,7 +283,14 @@ export default function WebOnDevicesBarcodeScanner({
     }
     
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
+      const tracks = streamRef.current.getTracks()
+      if (tracks) {
+        tracks.forEach(track => {
+          if (track && typeof track.stop === 'function') {
+            track.stop()
+          }
+        })
+      }
       streamRef.current = null
     }
     

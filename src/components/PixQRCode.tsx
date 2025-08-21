@@ -52,6 +52,7 @@ export default function PixQRCode({
     if (isOpen && !pixData) {
       generatePixPayment()
     }
+    return
   }, [isOpen])
 
   useEffect(() => {
@@ -82,6 +83,7 @@ export default function PixQRCode({
         clearInterval(statusInterval)
       }
     }
+    return undefined
   }, [pixData])
 
   const generatePixPayment = async () => {
@@ -98,7 +100,7 @@ export default function PixQRCode({
       
       // Simulação de dados PIX
       const mockPixData: PixPaymentData = {
-        qrCode: generateMockPixCode(amount),
+        qrCode: generateMockPixCode(),
         pixKey: 'exemplo@email.com',
         txId: `TXN${Date.now()}`,
         expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutos
@@ -114,7 +116,7 @@ export default function PixQRCode({
     }
   }
 
-  const generateMockPixCode = (amount: number): string => {
+  const generateMockPixCode = (): string => {
     // Simulação de um código PIX (EMV)
     // Em uma implementação real, isso viria do gateway de pagamento
     const pixKey = 'exemplo@email.com'

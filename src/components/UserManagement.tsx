@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,7 +24,7 @@ import {
   Edit,
   Trash2
 } from 'lucide-react'
-import { User } from '@/types/user'
+
 import { useUsers } from '@/hooks/useUsers'
 
 // Mapeamento de roles para exibição
@@ -32,7 +32,9 @@ const roleMapping = {
   ADMIN: { label: 'Administrador', color: 'bg-red-100 text-red-800' },
   MANAGER: { label: 'Gerente', color: 'bg-blue-100 text-blue-800' },
   OPERATOR: { label: 'Operador', color: 'bg-green-100 text-green-800' }
-}
+} as const
+
+type RoleKey = keyof typeof roleMapping
 
 function UserManagement() {
   const { users, isLoading, error, updateUser, deleteUser } = useUsers()
@@ -50,7 +52,7 @@ function UserManagement() {
     if (!users) return []
     
     return users.filter(user => {
-      const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      const matchesSearch = (user.name?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
                            user.email.toLowerCase().includes(searchTerm.toLowerCase())
       
       const matchesRole = selectedRole === 'all' || user.role === selectedRole
@@ -99,16 +101,7 @@ function UserManagement() {
       .slice(0, 2)
   }
 
-  const formatLastLogin = (date?: Date) => {
-    if (!date) return 'Nunca'
-    return new Intl.DateTimeFormat('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date)
-  }
+
 
   if (!isMounted || isLoading) {
     return (
@@ -294,7 +287,7 @@ function UserManagement() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <Avatar>
-                      <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+                      <AvatarFallback>{getInitials(user.name || 'U')}</AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-sm truncate">{user.name}</h3>
@@ -349,19 +342,21 @@ function UserManagement() {
                   <div className="flex items-center gap-2">
                     <Badge 
                       variant="secondary" 
-                      className={`text-xs ${roleMapping[user.role]?.color || 'bg-gray-100 text-gray-800'}`}
+                      className={`text-xs ${user.role && user.role in roleMapping ? roleMapping[user.role as RoleKey].color : 'bg-gray-100 text-gray-800'}`}
                     >
-                      {roleMapping[user.role]?.label || user.role}
+                      {user.role && user.role in roleMapping ? roleMapping[user.role as RoleKey].label : (user.role || 'Sem função')}
                     </Badge>
                     <Badge variant={user.is_active ? 'default' : 'secondary'}>
                       {user.is_active ? 'Ativo' : 'Inativo'}
                     </Badge>
                   </div>
                   
-                  <div>
-                    <p className="text-xs text-muted-foreground">Departamento</p>
-                    <p className="text-sm font-medium">{user.department}</p>
-                  </div>
+                  {user.department && (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Departamento</p>
+                      <p className="text-sm font-medium">{user.department}</p>
+                    </div>
+                  )}
                   
                   <div>
                     <p className="text-xs text-muted-foreground">Criado em</p>

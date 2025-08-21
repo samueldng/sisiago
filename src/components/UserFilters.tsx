@@ -23,21 +23,30 @@ export function UserFilters({ filters, onFiltersChange, totalUsers, activeUsers 
   }
 
   const handleRoleChange = (value: string) => {
-    onFiltersChange({ 
-      ...filters, 
-      role: value === 'all' ? undefined : value as UserRole 
-    })
+    const newFilters = { ...filters }
+    if (value === 'all') {
+      delete newFilters.role
+    } else {
+      newFilters.role = value as UserRole
+    }
+    onFiltersChange(newFilters)
   }
 
   const handleStatusChange = (value: string) => {
-    onFiltersChange({ 
-      ...filters, 
-      isActive: value === 'all' ? undefined : value === 'active' 
-    })
+    const newFilters = { ...filters }
+    if (value === 'all') {
+      delete newFilters.isActive
+    } else {
+      newFilters.isActive = value === 'active'
+    }
+    onFiltersChange(newFilters)
   }
 
   const handleDepartmentChange = (value: string) => {
-    onFiltersChange({ ...filters, department: value || undefined })
+    onFiltersChange({ 
+      ...filters, 
+      department: value || undefined 
+    })
   }
 
   const clearFilters = () => {

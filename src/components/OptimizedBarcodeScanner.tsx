@@ -146,17 +146,20 @@ export default function OptimizedBarcodeScanner({ isOpen, onClose, onScan }: Opt
     
     for (let x = 0; x < width; x++) {
       const index = (centerY * width + x) * 4
-      const gray = (data[index] + data[index + 1] + data[index + 2]) / 3
+      const r = data[index] ?? 0
+      const g = data[index + 1] ?? 0
+      const b = data[index + 2] ?? 0
+      const gray = (r + g + b) / 3
       lineData.push(gray)
     }
     
     // Detectar padrões de barras (simplificado)
     const threshold = 128
     let transitions = 0
-    let lastState = lineData[0] > threshold
+    let lastState = (lineData[0] ?? 0) > threshold
     
     for (let i = 1; i < lineData.length; i++) {
-      const currentState = lineData[i] > threshold
+      const currentState = (lineData[i] ?? 0) > threshold
       if (currentState !== lastState) {
         transitions++
         lastState = currentState

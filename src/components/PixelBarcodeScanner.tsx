@@ -6,12 +6,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import {
   Camera,
   X,
-  AlertCircle,
   CheckCircle,
   RotateCcw,
   Keyboard,
-  Zap,
-  Loader2
+  Zap
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 
@@ -73,7 +71,10 @@ export default function SimpleBarcodeScanner({ onScan, onClose, isOpen, title = 
     // Converter para escala de cinza e aplicar threshold
     const grayData: number[] = []
     for (let i = 0; i < data.length; i += 4) {
-      const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2])
+      const r = data[i] ?? 0
+      const g = data[i + 1] ?? 0
+      const b = data[i + 2] ?? 0
+      const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b)
       grayData.push(gray > config.threshold ? 1 : 0)
     }
     
@@ -141,8 +142,11 @@ export default function SimpleBarcodeScanner({ onScan, onClose, isOpen, title = 
     
     let code = ''
     for (let i = 0; i < Math.min(13, transitions.length); i++) {
-      const digit = Math.floor((transitions[i] / avg) * 10) % 10
-      code += digit.toString()
+      const transition = transitions[i]
+      if (transition !== undefined) {
+        const digit = Math.floor((transition / avg) * 10) % 10
+        code += digit.toString()
+      }
     }
     
     return code.length >= 8 ? code : null

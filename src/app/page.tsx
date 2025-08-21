@@ -19,12 +19,13 @@ import {
   LogOut,
   User,
   Clock,
-  FileText
+  FileText,
+  Shield
 } from 'lucide-react'
 import { formatDateTime } from '@/utils'
 import { ClientOnlyExpiredProductsAlert } from '@/components/ClientOnlyExpiredProductsAlert'
 import { useAuth } from '@/contexts/AuthContext'
-import { ProtectedRoute } from '@/components/ProtectedRoute'
+import ProtectedRoute from '@/components/ProtectedRoute'
 
 // Importação dinâmica para evitar problemas de hidratação
 const DashboardStats = dynamic(() => import('@/components/DashboardStats').then(mod => ({ default: mod.DashboardStats })), {
@@ -315,6 +316,23 @@ export default function HomePage() {
                     </CardTitle>
                     <CardDescription>
                       Gerenciar usuários do sistema
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              </Link>
+            )}
+
+            {/* Link para dashboard de auditoria avançado - apenas para administradores */}
+            {user?.role === 'admin' && (
+              <Link href="/audit-dashboard">
+                <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Shield className="w-5 h-5 mr-2 text-red-600" />
+                      Dashboard de Auditoria
+                    </CardTitle>
+                    <CardDescription>
+                      Dashboard avançado com alertas, métricas e análises de segurança
                     </CardDescription>
                   </CardHeader>
                 </Card>

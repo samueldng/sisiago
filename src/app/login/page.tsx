@@ -3,45 +3,65 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, EyeOff, LogIn, Download, X } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Download, X, Loader2 } from 'lucide-react';
 
 // Schema de validação
 const loginSchema = z.object({
   email: z.string().email('Email inválido'),
-  password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres')
+  password: z.string().min(1, 'Senha é obrigatória')
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
 
+interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: string[];
+  readonly userChoice: Promise<{
+    outcome: 'accepted' | 'dismissed';
+    platform: string;
+  }>;
+  prompt(): Promise<void>;
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
   const [formData, setFormData] = useState<LoginForm>({
     email: '',
     password: ''
   });
   const [errors, setErrors] = useState<Partial<LoginForm>>({});
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [apiError, setApiError] = useState('');
   const [showPWAPrompt, setShowPWAPrompt] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [logoLoaded, setLogoLoaded] = useState(false);
+
+  // Redirecionar se já estiver autenticado
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      console.log('✅ LoginPage: Usuário já autenticado, redirecionando para /');
+      router.replace('/');
+    }
+  }, [isAuthenticated, authLoading, router]);
 
   // Detectar se pode instalar como PWA
   useEffect(() => {
-    const handleBeforeInstallPrompt = (e: any) => {
+    const handleBeforeInstallPrompt = (e: BeforeInstallPromptEvent) => {
       e.preventDefault();
       setDeferredPrompt(e);
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt as EventListener);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt as EventListener);
     };
   }, []);
 
@@ -76,21 +96,22 @@ export default function LoginPage() {
     }
   };
 
-  const handleInstallPWA = async () => {
+  const installPWA = async () => {
     if (deferredPrompt) {
-      deferredPrompt.prompt();
+      await deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
+      console.log('✅ PWA install prompt was:', outcome);
       setDeferredPrompt(null);
-      setShowPWAPrompt(false);
-      router.push('/');
-      router.refresh();
     }
+    setShowPWAPrompt(false);
+    console.log('🔄 LoginPage: PWA instalado, redirecionando para /');
+    router.replace('/');
   };
 
-  const handleSkipPWA = () => {
+  const skipPWA = () => {
     setShowPWAPrompt(false);
-    router.push('/');
-    router.refresh();
+    console.log('🔄 LoginPage: PWA ignorado, redirecionando para /');
+    router.replace('/');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -100,39 +121,45 @@ export default function LoginPage() {
       return;
     }
 
-    setIsLoading(true);
+    setIsSubmitting(true);
     setApiError('');
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-        credentials: 'include' // Necessário para enviar e receber cookies
-      });
+      console.log('🔐 LoginPage: Tentando fazer login com:', formData.email);
+      const success = await login(formData.email, formData.password);
 
-      const data = await response.json();
-
-      if (response.ok) {
+      if (success) {
+        console.log('✅ LoginPage: Login bem-sucedido');
         // Mostrar sugestão de PWA se disponível
         if (deferredPrompt) {
           setShowPWAPrompt(true);
         } else {
-          router.push('/');
-          router.refresh();
+          console.log('🔄 LoginPage: Redirecionando para /');
+          router.replace('/');
         }
       } else {
-        setApiError(data.error || 'Erro ao fazer login');
+        console.log('❌ LoginPage: Login falhou');
+        setApiError('Email ou senha incorretos');
       }
     } catch (error) {
-      console.error('Erro no login:', error);
+      console.error('❌ LoginPage: Erro no login:', error);
       setApiError('Erro de conexão. Tente novamente.');
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
+
+  // Mostrar loading enquanto verifica autenticação
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="flex flex-col items-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <p className="text-gray-600">Verificando autenticação...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 py-4 px-4 sm:px-6 lg:px-8">
@@ -186,7 +213,7 @@ export default function LoginPage() {
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
                   className={`h-11 ${errors.email ? 'border-red-500 focus:border-red-500' : 'border-gray-300 focus:border-blue-500'} transition-colors`}
-                  disabled={isLoading}
+                  disabled={isSubmitting}
                 />
                 {errors.email && (
                   <p className="text-sm text-red-500 flex items-center gap-1">
@@ -206,13 +233,13 @@ export default function LoginPage() {
                     value={formData.password}
                     onChange={(e) => handleInputChange('password', e.target.value)}
                     className={`h-11 pr-10 ${errors.password ? 'border-red-500 focus:border-red-500' : 'border-gray-300 focus:border-blue-500'} transition-colors`}
-                    disabled={isLoading}
+                    disabled={isSubmitting}
                   />
                   <button
                     type="button"
                     className="absolute inset-y-0 right-0 pr-3 flex items-center hover:bg-gray-50 rounded-r transition-colors"
                     onClick={() => setShowPassword(!showPassword)}
-                    disabled={isLoading}
+                    disabled={isSubmitting}
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4 text-gray-400 hover:text-gray-600" />
@@ -232,11 +259,11 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors duration-200 shadow-lg hover:shadow-xl"
-                disabled={isLoading}
+                disabled={isSubmitting}
               >
-                {isLoading ? (
+                {isSubmitting ? (
                   <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     Entrando...
                   </div>
                 ) : (
@@ -281,7 +308,7 @@ export default function LoginPage() {
                     Instalar App
                   </Button>
                   <Button
-                    onClick={handleSkipPWA}
+                    onClick={skipPWA}
                     variant="outline"
                     className="w-full h-11 border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
                   >

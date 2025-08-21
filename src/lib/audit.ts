@@ -156,6 +156,7 @@ export async function createAuditLog(
 // Interface para resultado paginado
 export interface PaginatedAuditLogs {
   logs: AuditLog[];
+  totalCount: number;
   pagination: {
     total: number;
     limit: number;
@@ -235,6 +236,7 @@ export async function getAuditLogs(filters?: {
       console.error('Erro ao buscar logs de auditoria:', error);
       return {
         logs: [],
+        totalCount: 0,
         pagination: {
           total: 0,
           limit,
@@ -257,6 +259,7 @@ export async function getAuditLogs(filters?: {
 
     return {
       logs: transformedLogs,
+      totalCount: total,
       pagination: {
         total,
         limit,
@@ -268,6 +271,7 @@ export async function getAuditLogs(filters?: {
     console.error('Erro ao buscar logs de auditoria:', error);
     return {
       logs: [],
+      totalCount: 0,
       pagination: {
         total: 0,
         limit: filters?.limit || 25,
@@ -279,62 +283,95 @@ export async function getAuditLogs(filters?: {
 }
 
 // Função para exportar logs de auditoria
-export async function exportAuditLogs(
-  filters?: {
-    tableName?: string;
-    operation?: string;
-    userId?: string;
-    startDate?: string;
-    endDate?: string;
-  },
-  format: 'csv' | 'json' = 'csv'
-): Promise<string> {
+export async function exportAuditLogs(options: {
+  format: 'csv' | 'json';
+  tableName?: string;
+  operation?: string;
+  userId?: string;
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+  ipAddress?: string;
+  sessionId?: string;
+}): Promise<void> {
   try {
     // Buscar todos os logs sem paginação para exportação
-    const result = await getAuditLogs({ ...filters, limit: 10000, offset: 0 });
+    const filters = {
+      tableName: options.tableName,
+      operation: options.operation,
+      userId: options.userId,
+      startDate: options.startDate,
+      endDate: options.endDate,
+      search: options.search,
+      ipAddress: options.ipAddress,
+      sessionId: options.sessionId,
+      limit: 10000,
+      offset: 0
+    };
+    
+    const result = await getAuditLogs(filters);
     const logs = result.logs;
 
-    if (format === 'json') {
-      return JSON.stringify(logs, null, 2);
+    let content: string;
+    let filename: string;
+    let mimeType: string;
+
+    if (options.format === 'json') {
+      content = JSON.stringify(logs, null, 2);
+      filename = `audit-logs-${new Date().toISOString().split('T')[0]}.json`;
+      mimeType = 'application/json';
+    } else {
+      // Gerar CSV
+      const headers = [
+        'ID',
+        'Data/Hora',
+        'Usuário',
+        'Email',
+        'Role',
+        'Tabela',
+        'Operação',
+        'ID do Registro',
+        'IP',
+        'User Agent',
+        'Valores Antigos',
+        'Valores Novos'
+      ];
+
+      const csvRows = [headers.join(',')];
+
+      logs.forEach(log => {
+        const row = [
+          log.id,
+          new Date(log.created_at).toLocaleString('pt-BR'),
+          `"${log.user_name || 'Sistema'}"`,
+          `"${log.user_email || ''}"`,
+          log.user_role || 'system',
+          log.table_name,
+          log.operation,
+          log.record_id,
+          log.ip_address || '',
+          `"${log.user_agent || ''}"`,
+          `"${log.old_values ? JSON.stringify(log.old_values).replace(/"/g, '""') : ''}"`,
+          `"${log.new_values ? JSON.stringify(log.new_values).replace(/"/g, '""') : ''}"`
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      content = csvRows.join('\n');
+      filename = `audit-logs-${new Date().toISOString().split('T')[0]}.csv`;
+      mimeType = 'text/csv';
     }
 
-    // Gerar CSV
-    const headers = [
-      'ID',
-      'Data/Hora',
-      'Usuário',
-      'Email',
-      'Role',
-      'Tabela',
-      'Operação',
-      'ID do Registro',
-      'IP',
-      'User Agent',
-      'Valores Antigos',
-      'Valores Novos'
-    ];
-
-    const csvRows = [headers.join(',')];
-
-    logs.forEach(log => {
-      const row = [
-        log.id,
-        new Date(log.created_at).toLocaleString('pt-BR'),
-        `"${log.user_name || 'Sistema'}"`,
-        `"${log.user_email || ''}"`,
-        log.user_role || 'system',
-        log.table_name,
-        log.operation,
-        log.record_id,
-        log.ip_address || '',
-        `"${log.user_agent || ''}"`,
-        `"${log.old_values ? JSON.stringify(log.old_values).replace(/"/g, '""') : ''}"`,
-        `"${log.new_values ? JSON.stringify(log.new_values).replace(/"/g, '""') : ''}"`
-      ];
-      csvRows.push(row.join(','));
-    });
-
-    return csvRows.join('\n');
+    // Criar e baixar o arquivo
+    const blob = new Blob([content], { type: mimeType });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   } catch (error) {
     console.error('Erro ao exportar logs de auditoria:', error);
     throw new Error('Erro ao exportar logs de auditoria');

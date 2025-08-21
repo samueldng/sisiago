@@ -1,6 +1,6 @@
 'use client'
 
-import { User, UserFormData, UserRole, UserModalData } from '@/types'
+import { UserFormData, UserRole, UserModalData } from '@/types'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'

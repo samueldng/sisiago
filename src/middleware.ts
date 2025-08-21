@@ -1,72 +1,101 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
-import { UserRole, ROLE_PERMISSIONS } from './lib/permissions';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'your-secret-key'
 );
 
-// Rotas protegidas por role
-const PROTECTED_ROUTES = {
-  '/users': ['admin', 'manager'],
-  '/audit': ['admin'],
-  '/system': ['admin'],
-  '/reports': ['admin', 'manager'],
-} as const;
+// Rotas que não precisam de autenticação
+const publicRoutes = ['/login', '/api/auth/login', '/api/auth/logout'];
+
+// Rotas da API que sempre devem passar pelo middleware (para adicionar headers)
+const apiRoutes = ['/api/auth/verify', '/api/audit-logs', '/api/users'];
 
 export async function middleware(request: NextRequest) {
-  // Rotas que não precisam de autenticação
-  const publicPaths = ['/login', '/api/auth/login'];
-  
-  if (publicPaths.includes(request.nextUrl.pathname)) {
+  const { pathname } = request.nextUrl;
+
+  console.log('🔧 Middleware: Processando rota:', pathname);
+
+  // Permitir acesso total a rotas públicas
+  if (publicRoutes.includes(pathname)) {
+    console.log('🔧 Middleware: Rota pública, permitindo acesso');
     return NextResponse.next();
   }
 
+  // Verificar token
   const token = request.cookies.get('auth-token')?.value;
+  console.log('🔧 Middleware: Token encontrado:', !!token);
 
   if (!token) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    // Para rotas da API, retornar 401
+    if (pathname.startsWith('/api/')) {
+      console.log('🔧 Middleware: API sem token, retornando 401');
+      return NextResponse.json(
+        { error: 'Token não encontrado', authenticated: false },
+        { status: 401 }
+      );
+    }
+    // Para páginas, redirecionar para login apenas se não estiver já na página de login
+    if (pathname !== '/login') {
+      console.log('🔧 Middleware: Página sem token, redirecionando para login');
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
+    return NextResponse.next();
   }
 
   try {
+    // Verificar se o token é válido
     const { payload } = await jwtVerify(token, JWT_SECRET);
-    const userRole = payload.role as UserRole;
-    const userId = payload.userId as string;
+    console.log('🔧 Middleware: Token válido para usuário:', payload.email);
     
-    // Verifica se o usuário tem permissão para acessar a rota
-    const pathname = request.nextUrl.pathname;
-    const protectedRoute = Object.keys(PROTECTED_ROUTES).find(route => 
-      pathname.startsWith(route)
-    );
-    
-    if (protectedRoute) {
-      const allowedRoles = PROTECTED_ROUTES[protectedRoute as keyof typeof PROTECTED_ROUTES];
-      if (!allowedRoles.includes(userRole)) {
-        // Redireciona para página de acesso negado ou dashboard
-        return NextResponse.redirect(new URL('/dashboard?error=access_denied', request.url));
-      }
-    }
-    
-    // Adiciona informações do usuário aos headers
+    // Adicionar informações do usuário aos headers para uso nas rotas da API
     const requestHeaders = new Headers(request.headers);
-    requestHeaders.set('x-user-id', userId);
-    requestHeaders.set('x-user-role', userRole);
-    requestHeaders.set('x-user-permissions', JSON.stringify(ROLE_PERMISSIONS[userRole] || []));
-    
+    requestHeaders.set('x-user-id', payload.userId as string);
+    requestHeaders.set('x-user-email', payload.email as string);
+    requestHeaders.set('x-user-role', payload.role as string);
+
+    // Se o usuário está autenticado e tenta acessar /login, redirecionar para home
+    if (pathname === '/login') {
+      console.log('🔧 Middleware: Usuário autenticado tentando acessar login, redirecionando para home');
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+
     return NextResponse.next({
       request: {
         headers: requestHeaders,
       },
     });
   } catch (error) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    console.error('🔧 Middleware: Erro ao verificar token:', error);
+    
+    // Token inválido
+    if (pathname.startsWith('/api/')) {
+      console.log('🔧 Middleware: API com token inválido, retornando 401');
+      const response = NextResponse.json(
+        { error: 'Token inválido', authenticated: false },
+        { status: 401 }
+      );
+      response.cookies.delete('auth-token');
+      return response;
+    }
+    
+    // Para páginas, redirecionar para login apenas se não estiver já lá
+    if (pathname !== '/login') {
+      console.log('🔧 Middleware: Página com token inválido, redirecionando para login');
+      const response = NextResponse.redirect(new URL('/login', request.url));
+      response.cookies.delete('auth-token');
+      return response;
+    }
+    
+    // Se já está na página de login, apenas limpar o cookie inválido
+    const response = NextResponse.next();
+    response.cookies.delete('auth-token');
+    return response;
   }
 }
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico).*)',
-    '/api/((?!auth/login).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/auth).*)',
   ],
 };

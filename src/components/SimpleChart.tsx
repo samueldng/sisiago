@@ -179,7 +179,7 @@ export default function SimpleChart({
       const endAngle = currentAngle + sliceAngle
 
       // Desenhar fatia
-      ctx.fillStyle = colors[index]
+      ctx.fillStyle = colors[index] || baseColor
       ctx.beginPath()
       ctx.arc(centerX, centerY, radius, currentAngle, endAngle)
       ctx.arc(centerX, centerY, innerRadius, endAngle, currentAngle, true)
