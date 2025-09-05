@@ -47,15 +47,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const checkAuth = async (signal?: AbortSignal) => {
     // Evitar chamadas duplicadas
     if (isCheckingAuth) {
+      console.log('🔍 AuthContext: Verificação já em andamento, ignorando...');
       return;
     }
     
+    console.log('🔍 AuthContext: Verificando autenticação...');
     setIsCheckingAuth(true);
     
     try {
-
       // Verificar se a requisição foi cancelada
       if (signal?.aborted) {
+        console.log('🔍 AuthContext: Requisição cancelada');
         return;
       }
 
@@ -63,28 +65,54 @@ export function AuthProvider({ children }: AuthProviderProps) {
         method: 'GET',
         credentials: 'include',
         signal,
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
+
+      console.log('🔍 AuthContext: Status da resposta:', response.status);
 
       if (response.ok) {
         const data = await response.json();
-        setUser(data.user);
+        console.log('🔍 AuthContext: Dados da verificação:', data);
+        if (data.user && data.authenticated) {
+          console.log('✅ AuthContext: Usuário autenticado:', data.user.email);
+          setUser(data.user);
+        } else {
+          console.log('❌ AuthContext: Dados de autenticação inválidos');
+          setUser(null);
+        }
       } else {
+        // Log específico para diferentes tipos de erro
+        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        console.log('❌ AuthContext: Falha na autenticação, status:', response.status);
+        console.log('❌ AuthContext: Detalhes do erro:', errorData);
+        
+        if (response.status === 500 && errorData.code === 'JWT_CONFIG_ERROR') {
+          console.error('Erro de configuração JWT. Verifique as variáveis de ambiente.');
+        } else if (response.status === 401) {
+          console.debug('Token inválido ou expirado:', errorData.code);
+        }
+        
         setUser(null);
       }
     } catch (error: any) {
       // Ignorar erros de cancelamento
       if (error.name === 'AbortError') {
+        console.log('🔍 AuthContext: Requisição cancelada (AbortError)');
         return;
       }
       
-      // Silenciar erro em desenvolvimento para evitar logs duplicados do React Strict Mode
-      if (process.env.NODE_ENV === 'development') {
-        console.debug('Auth check:', error.message);
+      // Tratamento específico para diferentes tipos de erro
+      if (error.message?.includes('fetch')) {
+        console.error('❌ AuthContext: Erro de conexão com a API de autenticação:', error.message);
       } else {
-        console.error('Erro ao verificar autenticação:', error);
+        console.error('❌ AuthContext: Erro ao verificar autenticação:', error);
       }
+      
       setUser(null);
     } finally {
+      console.log('🔍 AuthContext: Finalizando verificação de autenticação');
       setIsLoading(false);
       setIsCheckingAuth(false);
     }
@@ -93,6 +121,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Login
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
+      console.log('🔑 AuthContext: Iniciando login para:', email);
+      
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
@@ -102,17 +132,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
         credentials: 'include',
       });
 
+      console.log('🔑 AuthContext: Status da resposta de login:', response.status);
       const data = await response.json();
+      console.log('🔑 AuthContext: Dados da resposta:', data);
 
-      if (response.ok) {
+      if (response.ok && data.success && data.user) {
+        console.log('✅ AuthContext: Login bem-sucedido, definindo usuário:', data.user.email);
         setUser(data.user);
         return { success: true };
       } else {
-        return { success: false, error: data.error || 'Erro ao fazer login' };
+        console.log('❌ AuthContext: Falha no login:', data.error || 'Credenciais inválidas');
+        return { success: false, error: data.error || 'Credenciais inválidas' };
       }
-    } catch (error) {
-      console.error('Erro no login:', error);
-      return { success: false, error: 'Erro de conexão. Tente novamente.' };
+    } catch (error: any) {
+      console.error('❌ AuthContext: Erro no login:', error);
+      
+      if (error.message?.includes('fetch')) {
+        return { success: false, error: 'Erro de conexão. Verifique sua internet e tente novamente.' };
+      }
+      
+      return { success: false, error: 'Erro interno. Tente novamente.' };
     }
   };
 
@@ -122,6 +161,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
     } catch (error) {
       console.error('Erro no logout:', error);
